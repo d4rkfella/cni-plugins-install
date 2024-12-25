@@ -14,7 +14,7 @@ RUN apk add --no-cache \
 
 RUN curl -fsSLO https://github.com/containernetworking/plugins/releases/download/$CNI_PLUGINS_VERSION/cni-plugins-linux-amd64-$CNI_PLUGINS_VERSION.tgz{,.sha256} && \
     sha256sum --check --strict cni-plugins-linux-amd64-$CNI_PLUGINS_VERSION.tgz.sha256 && \
-    mkdir -p opt/cni/bin && \
+    mkdir -p /opt/cni/bin && \
     tar -xzvf cni-plugins-linux-amd64-$CNI_PLUGINS_VERSION.tgz -C /opt/cni/bin && \
     rm -rf /root/.cache /tmp/*
 
