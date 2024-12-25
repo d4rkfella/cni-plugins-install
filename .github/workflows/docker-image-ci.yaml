@@ -21,6 +21,10 @@ jobs:
       shell: bash
       run: echo "LOWERCASE_REPO_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_ENV
 
+    - name: Extract CNI_PLUGINS_VERSION from Dockerfile
+      shell: bash
+      run: echo "CNI_PLUGINS_VERSION=$(grep -oP '(?<=ARG CNI_PLUGINS_VERSION=)[^ ]+' Dockerfile)" >> $GITHUB_ENV
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
@@ -37,7 +41,7 @@ jobs:
         push: true
         tags: |
             ghcr.io/${{ env.LOWERCASE_REPO_OWNER }}/install-cni-bundle:latest
-            ghcr.io/${{ env.LOWERCASE_REPO_OWNER }}/install-cni-bundle:v1.6.1
+            ghcr.io/${{ env.LOWERCASE_REPO_OWNER }}/install-cni-bundle:${{ env.CNI_PLUGINS_VERSION }}
         platforms: linux/amd64
         file: Dockerfile
         context: .
