@@ -7,7 +7,8 @@
     ":automergeBranch",
     ":disableRateLimiting",
     ":timezone(Europe/Sofia)",
-    ":semanticCommits"
+    ":semanticCommits",
+    "github>Darkfella91/cni-plugins-install//.github/renovate/customManagers.json5"
   ],
   "dependencyDashboardTitle": "Renovate Dashboard 🤖",
   "suppressNotifications": ["prEditedNotification", "prIgnoreNotification"],
@@ -50,19 +51,6 @@
       "semanticCommitType": "fix",
       "automerge": true,
       "automergeType": "branch"
-    },
-    {
-      "customType": "regex",
-      "description": ["Process ARG versions in Dockerfile"],
-      "fileMatch": ["Dockerfile"],
-      "matchStrings": [
-        "# renovate: depName=(?<depName>\\S+)\\s*\\nARG (?<argName>\\S+)=v(?<currentValue>\\S+)"
-      ],
-      "datasourceTemplate": "github-releases",
-      "versioningTemplate": "semver",
-      "depNameTemplate": "{{depName}}",
-      "packageNameTemplate": "{{depName}}",
-      "lookupNameTemplate": "{{depName}}"
     }
   ]
 }
