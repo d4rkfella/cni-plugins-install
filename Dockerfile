@@ -9,6 +9,7 @@ RUN apk add --no-cache \
     ca-certificates \
     bash \
     tar \
+    coreutils \
     && rm -rf /var/cache/apk/*
 
 RUN curl -fsSLO https://github.com/containernetworking/plugins/releases/download/$CNI_PLUGINS_VERSION/cni-plugins-linux-amd64-$CNI_PLUGINS_VERSION.tgz{,.sha256} && \
