@@ -1,0 +1,55 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "docker:enableMajor",
+    ":dependencyDashboard",
+    ":automergeBranch",
+    ":disableRateLimiting",
+    ":timezone(Europe/Sofia)",
+    ":semanticCommits"
+  ],
+  "dependencyDashboardTitle": "Renovate Dashboard 🤖",
+  "suppressNotifications": ["prEditedNotification", "prIgnoreNotification"],
+  "packageRules": [
+    {
+      "addLabels": ["renovate/container", "type/major"],
+      "additionalBranchPrefix": "{{parentDir}}-",
+      "commitMessageExtra": " ( {{currentVersion}} → {{newVersion}} )",
+      "commitMessagePrefix": "feat({{parentDir}})!: ",
+      "commitMessageTopic": "{{depName}}",
+      "labels": ["{{parentDir}}"],
+      "matchDatasources": ["docker"],
+      "matchFileNames": ["Dockerfile"],
+      "matchUpdateTypes": ["major"]
+    },
+    {
+      "addLabels": ["renovate/container", "type/minor"],
+      "additionalBranchPrefix": "{{parentDir}}-",
+      "commitMessageExtra": "( {{currentVersion}} → {{newVersion}} )",
+      "commitMessageTopic": "{{depName}}",
+      "labels": ["{{parentDir}}"],
+      "matchDatasources": ["docker"],
+      "matchFileNames": ["Dockerfile"],
+      "matchUpdateTypes": ["minor"],
+      "semanticCommitScope": "{{parentDir}}",
+      "semanticCommitType": "feat",
+      "automerge": true,
+      "automergeType": "branch"
+    },
+    {
+      "addLabels": ["renovate/container", "type/patch"],
+      "additionalBranchPrefix": "{{parentDir}}-",
+      "commitMessageExtra": "( {{currentVersion}} → {{newVersion}} )",
+      "commitMessageTopic": "{{depName}}",
+      "labels": ["{{parentDir}}"],
+      "matchDatasources": ["docker"],
+      "matchFileNames": ["Dockerfile"],
+      "matchUpdateTypes": ["patch"],
+      "semanticCommitScope": "{{parentDir}}",
+      "semanticCommitType": "fix",
+      "automerge": true,
+      "automergeType": "branch"
+    }
+  ]
+}
