@@ -8,7 +8,7 @@
     ":disableRateLimiting",
     ":timezone(Europe/Sofia)",
     ":semanticCommits",
-    "github>Darkfella91/cni-plugins-install//.github/renovate/customManagers.json5"
+    "github>d4rkfella/cni-plugins-install//.github/renovate/customManagers.json5"
   ],
   "dependencyDashboardTitle": "Renovate Dashboard 🤖",
   "suppressNotifications": ["prEditedNotification", "prIgnoreNotification"],
