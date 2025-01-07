@@ -1,7 +1,7 @@
 FROM alpine:3.21@sha256:21dc6063fd678b478f57c0e13f47560d0ea4eeba26dfc947b2a4f81f686b9f45
 
 # renovate: depName=containernetworking/plugins
-ARG CNI_PLUGINS_VERSION=v1.6.1
+ARG CNI_PLUGINS_VERSION=v1.6.2
 
 WORKDIR /tmp
 
