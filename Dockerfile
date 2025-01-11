@@ -4,6 +4,10 @@ FROM golang:alpine3.21@sha256:c23339199a08b0e12032856908589a6d41a0dab141b8b3b21f
 # renovate: depName=containernetworking/plugins
 ARG CNI_PLUGINS_VERSION=v1.6.2
 
+ENV CGO_ENABLED=0
+ENV GOOS=linux
+ENV GOARCH=amd64
+
 WORKDIR /app
 
 COPY copyfiles.go .
@@ -25,7 +29,7 @@ RUN curl -fsSLO https://github.com/containernetworking/plugins/releases/download
     rm -rf /root/.cache /tmp/*
 
 # Step 2: Use the distroless base image
-FROM gcr.io/distroless/base
+FROM gcr.io/distroless/static
 
 # Copy the compiled Go binary into the distroless image
 COPY --from=builder /app/copyfiles /usr/local/bin/copyfiles
