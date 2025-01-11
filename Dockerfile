@@ -19,22 +19,17 @@ RUN apk add --no-cache \
     ca-certificates \
     bash \
     tar \
-    coreutils \
-    && rm -rf /var/cache/apk/*
+    coreutils 
 
 RUN curl -fsSLO https://github.com/containernetworking/plugins/releases/download/$CNI_PLUGINS_VERSION/cni-plugins-linux-amd64-$CNI_PLUGINS_VERSION.tgz{,.sha256} && \
     sha256sum --check --strict cni-plugins-linux-amd64-$CNI_PLUGINS_VERSION.tgz.sha256 && \
     mkdir -p /opt/cni/bin && \
-    tar -xzvf cni-plugins-linux-amd64-$CNI_PLUGINS_VERSION.tgz -C /opt/cni/bin && \
-    rm -rf /root/.cache /tmp/*
+    tar -xzvf cni-plugins-linux-amd64-$CNI_PLUGINS_VERSION.tgz -C /opt/cni/bin
 
-# Step 2: Use the distroless base image
 FROM gcr.io/distroless/static
 
-# Copy the compiled Go binary into the distroless image
 COPY --from=builder /app/copyfiles /usr/local/bin/copyfiles
 
 COPY --from=builder /opt/cni/bin /opt/cni/bin
 
-# Set the entrypoint to the compiled Go binary
 CMD ["/usr/local/bin/copyfiles"]
