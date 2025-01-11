@@ -30,8 +30,8 @@ func copyFile(srcPath, dstPath string) error {
 }
 
 func main() {
-	srcDir := "/path/to/source/"
-	dstDir := "/shared-data/"
+	srcDir := "/opt/cni/bin/"
+	dstDir := "/host/opt/cni/bin/"
 
 	// Read the source directory and copy each file
 	err := filepath.Walk(srcDir, func(srcPath string, info os.FileInfo, err error) error {
