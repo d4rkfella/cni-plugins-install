@@ -2,7 +2,7 @@
 package main
 
 import (
-	"fmt"
+	"fmt"   // Import fmt to use for printing messages
 	"io"
 	"os"
 	"log"
@@ -17,7 +17,16 @@ func copyFile(srcPath, dstPath string) error {
 	}
 	defer srcFile.Close()
 
-	// Create the destination file
+	// Check if the destination file already exists
+	if _, err := os.Stat(dstPath); err == nil {
+		// If the file exists, overwrite it
+		fmt.Printf("Overwriting file: %s\n", dstPath)  // Use fmt to print message
+	} else {
+		// If the file doesn't exist, create it
+		fmt.Printf("Creating new file: %s\n", dstPath)  // Use fmt to print message
+	}
+
+	// Create or overwrite the destination file
 	dstFile, err := os.Create(dstPath)
 	if err != nil {
 		return err
