@@ -21,5 +21,5 @@ RUN curl -fsSLO https://github.com/containernetworking/plugins/releases/download
 
 ENTRYPOINT ["/bin/bash", "-c", "\
   mkdir -p /host/opt/cni/bin && \
-  cp /opt/cni/bin/* /host/opt/cni/bin && \
+  cp -f /opt/cni/bin/* /host/opt/cni/bin && \
   if [ $? -eq 0 ]; then echo 'CNI plugins copied successfully.'; exit 0; else echo 'Failed to copy CNI plugins.'; exit 1; fi"]
