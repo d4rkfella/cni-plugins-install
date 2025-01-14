@@ -17,7 +17,6 @@ RUN go build -o copyfiles copyfiles.go
 RUN apk add --no-cache \
     curl \
     ca-certificates \
-    bash \
     tar \
     coreutils 
 
