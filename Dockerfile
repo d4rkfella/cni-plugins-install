@@ -31,4 +31,4 @@ COPY --from=builder /app/copyfiles /usr/local/bin/copyfiles
 
 COPY --from=builder /opt/cni/bin /opt/cni/bin
 
-CMD ["/usr/local/bin/copyfiles"]
+ENTRYPOINT ["/usr/local/bin/copyfiles"]
