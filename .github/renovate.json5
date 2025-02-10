@@ -5,6 +5,8 @@
     "docker:enableMajor",
     ":dependencyDashboard",
     ":disableRateLimiting",
+    ":automergeBranch",
+    ":skipStatusChecks",
     ":timezone(Europe/Sofia)",
     ":semanticCommits"
   ],
@@ -56,6 +58,14 @@
       "semanticCommitScope": "github-action",
       "commitMessageTopic": "{{depName}}",
       "commitMessageExtra": "( {{currentVersion}} → {{newVersion}} )"
+    },
+    {
+      "description": ["Auto-merge GitHub Actions for minor and patch"],
+      "matchManagers": ["github-actions"],
+      "matchDatasources": ["github-tags"],
+      "automerge": true,
+      "automergeType": "branch",
+      "matchUpdateTypes": ["minor", "patch"]
     },
     {
       "matchUpdateTypes": ["major"],
