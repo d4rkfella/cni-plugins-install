@@ -4,53 +4,78 @@
     "config:recommended",
     "docker:enableMajor",
     ":dependencyDashboard",
-    ":automergeBranch",
     ":disableRateLimiting",
     ":timezone(Europe/Sofia)",
-    ":semanticCommits",
-    "github>d4rkfella/cni-plugins-install//.github/renovate/customManagers.json5"
+    ":semanticCommits"
   ],
   "dependencyDashboardTitle": "Renovate Dashboard 🤖",
   "suppressNotifications": ["prEditedNotification", "prIgnoreNotification"],
   "packageRules": [
     {
-      "addLabels": ["renovate/container", "type/major"],
-      "additionalBranchPrefix": "{{parentDir}}-",
-      "commitMessageExtra": " ( {{currentVersion}} → {{newVersion}} )",
-      "commitMessagePrefix": "feat({{parentDir}})!: ",
-      "commitMessageTopic": "{{depName}}",
-      "labels": ["{{parentDir}}"],
       "matchDatasources": ["docker"],
-      "matchFileNames": ["Dockerfile"],
-      "matchUpdateTypes": ["major"]
+      "matchUpdateTypes": ["major"],
+      "commitMessagePrefix": "feat(container)!: ",
+      "commitMessageTopic": "{{depName}}",
+      "commitMessageExtra": " ( {{currentVersion}} → {{newVersion}} )"
     },
     {
-      "addLabels": ["renovate/container", "type/minor"],
-      "additionalBranchPrefix": "{{parentDir}}-",
-      "commitMessageExtra": "( {{currentVersion}} → {{newVersion}} )",
-      "commitMessageTopic": "{{depName}}",
-      "labels": ["{{parentDir}}"],
       "matchDatasources": ["docker"],
-      "matchFileNames": ["Dockerfile"],
       "matchUpdateTypes": ["minor"],
-      "semanticCommitScope": "{{parentDir}}",
       "semanticCommitType": "feat",
-      "automerge": true,
-      "automergeType": "branch"
+      "semanticCommitScope": "container",
+      "commitMessageTopic": "{{depName}}",
+      "commitMessageExtra": "( {{currentVersion}} → {{newVersion}} )"
     },
     {
-      "addLabels": ["renovate/container", "type/patch"],
-      "additionalBranchPrefix": "{{parentDir}}-",
-      "commitMessageExtra": "( {{currentVersion}} → {{newVersion}} )",
-      "commitMessageTopic": "{{depName}}",
-      "labels": ["{{parentDir}}"],
       "matchDatasources": ["docker"],
-      "matchFileNames": ["Dockerfile"],
       "matchUpdateTypes": ["patch"],
-      "semanticCommitScope": "{{parentDir}}",
       "semanticCommitType": "fix",
-      "automerge": true,
-      "automergeType": "branch"
+      "semanticCommitScope": "container",
+      "commitMessageTopic": "{{depName}}",
+      "commitMessageExtra": "( {{currentVersion}} → {{newVersion}} )"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["major"],
+      "commitMessagePrefix": "feat(github-action)!: ",
+      "commitMessageTopic": "{{depName}}",
+      "commitMessageExtra": "( {{currentVersion}} → {{newVersion}} )"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor"],
+      "semanticCommitType": "feat",
+      "semanticCommitScope": "github-action",
+      "commitMessageTopic": "{{depName}}",
+      "commitMessageExtra": "( {{currentVersion}} → {{newVersion}} )"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["patch"],
+      "semanticCommitType": "fix",
+      "semanticCommitScope": "github-action",
+      "commitMessageTopic": "{{depName}}",
+      "commitMessageExtra": "( {{currentVersion}} → {{newVersion}} )"
+    },
+    {
+      "matchUpdateTypes": ["major"],
+      "labels": ["type/major"]
+    },
+    {
+      "matchUpdateTypes": ["minor"],
+      "labels": ["type/minor"]
+    },
+    {
+      "matchUpdateTypes": ["patch"],
+      "labels": ["type/patch"]
+    },
+    {
+      "matchDatasources": ["docker"],
+      "addLabels": ["renovate/container"]
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "addLabels": ["renovate/github-action"]
     }
   ]
 }
