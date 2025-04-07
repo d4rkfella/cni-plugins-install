@@ -8,13 +8,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"strings"
 	"io"
 	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -24,14 +24,14 @@ import (
 )
 
 var (
-	httpClient    = &http.Client{Transport: &http.Transport{MaxIdleConns: 10, IdleConnTimeout: 30 * time.Second, ForceAttemptHTTP2: true}}
-	baseURL       = "https://github.com/containernetworking/plugins/releases/download"
-	targetDir     = "/tmp/host/opt/cni/bin"
-	tarFormat     = "cni-plugins-linux-amd64-%s.tgz"
-	shaFormat     = "cni-plugins-linux-amd64-%s.tgz.sha256"
+	httpClient      = &http.Client{Transport: &http.Transport{MaxIdleConns: 10, IdleConnTimeout: 30 * time.Second, ForceAttemptHTTP2: true}}
+	baseURL         = "https://github.com/containernetworking/plugins/releases/download"
+	targetDir       = "/tmp/host/opt/cni/bin"
+	tarFormat       = "cni-plugins-linux-amd64-%s.tgz"
+	shaFormat       = "cni-plugins-linux-amd64-%s.tgz.sha256"
 	downloadTimeout = 15 * time.Minute
-	bufferSize    = 1 * 1024 * 1024
-	maxRetries    = 3
+	bufferSize      = 1 * 1024 * 1024
+	maxRetries      = 3
 )
 
 type cleanup struct {
@@ -308,13 +308,10 @@ func extractTarGz(ctx context.Context, src, dst string, logger zerolog.Logger) e
 			return fmt.Errorf("tar read failed: %w", err)
 		}
 
-		target := filepath.Join(dst, header.Name)
-		switch header.Typeflag {
-		case tar.TypeDir:
-			if err := os.MkdirAll(target, header.FileInfo().Mode()); err != nil {
-				return fmt.Errorf("failed to create directory: %w", err)
-			}
-		case tar.TypeReg:
+		if header.Typeflag == tar.TypeReg {
+			fileName := filepath.Base(header.Name)
+			target := filepath.Join(dst, fileName)
+
 			if err := writeFile(target, tr, header.FileInfo().Mode(), logger); err != nil {
 				return err
 			}
@@ -350,93 +347,94 @@ func writeFile(path string, r io.Reader, mode os.FileMode, logger zerolog.Logger
 }
 
 func atomicSync(ctx context.Context, staging, target string, logger zerolog.Logger) error {
-	type syncedFile struct {
+	type fileOperation struct {
 		original string
 		backup   string
 	}
 
-	var (
-		modified      []syncedFile
-		installedFiles int
-	)
+	var operations []fileOperation
+	var rollbackErr error
 
-	err := filepath.Walk(staging, func(srcPath string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
-			return err
+	entries, err := os.ReadDir(staging)
+	if err != nil {
+		return fmt.Errorf("failed to read staging directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
 		}
+
+		srcPath := filepath.Join(staging, entry.Name())
+		dstPath := filepath.Join(target, entry.Name())
 
 		select {
 		case <-ctx.Done():
-			logger.Error().Err(ctx.Err()).Msg("Context cancelled during sync")
-			return ctx.Err()
+			rollbackErr = fmt.Errorf("operation cancelled: %w", ctx.Err())
+			break
 		default:
 		}
 
-		relPath, err := filepath.Rel(staging, srcPath)
-		if err != nil {
-			return fmt.Errorf("relative path error: %w", err)
+		if rollbackErr != nil {
+			break
 		}
 
-		dstPath := filepath.Join(target, relPath)
-		dstDir := filepath.Dir(dstPath)
-		
-		if err := os.MkdirAll(dstDir, 0755); err != nil {
-			return fmt.Errorf("failed to create directory %s: %w", dstDir, err)
+		if targetInfo, err := os.Stat(dstPath); err == nil && targetInfo.IsDir() {
+			rollbackErr = fmt.Errorf("can't replace directory with file: %s", dstPath)
+			break
 		}
 
-		if targetInfo, err := os.Stat(dstPath); err == nil {
-			if targetInfo.IsDir() {
-				return fmt.Errorf("can't replace directory with file: %s", dstPath)
-			}
-
-			same, err := sameChecksum(srcPath, dstPath)
-			if err != nil {
-				return fmt.Errorf("checksum comparison failed: %w", err)
-			}
-			if same {
-				logger.Info().Str("file", dstPath).Msg("Skipping identical file")
-				return nil
-			}
-
-			backupPath := fmt.Sprintf("%s.backup-%s", dstPath, time.Now().Format("20060102T150405"))
+		var backupPath string
+		if _, err := os.Stat(dstPath); err == nil {
+			backupPath = fmt.Sprintf("%s.backup-%s", dstPath, time.Now().Format("20060102T150405"))
 			if err := os.Rename(dstPath, backupPath); err != nil {
-				return fmt.Errorf("backup failed for %s: %w", dstPath, err)
+				rollbackErr = fmt.Errorf("backup failed: %w", err)
+				break
 			}
-			modified = append(modified, syncedFile{original: dstPath, backup: backupPath})
-			logger.Info().Str("src", dstPath).Str("backup", backupPath).Msg("Backed up existing file")
 		}
 
-		if err := moveOrCopyFile(srcPath, dstPath, info.Mode()); err != nil {
-			return fmt.Errorf("failed to move file: %w", err)
-		}
-		logger.Info().Str("file", dstPath).Msg("Installed file")
-
-		installedFiles++
-		return nil
-	})
-
-	if err != nil {
-		logger.Error().Err(err).Msg("Error during sync. Rolling back...")
-		for i := len(modified) - 1; i >= 0; i-- {
-			m := modified[i]
-			if err := os.Remove(m.original); err != nil && !os.IsNotExist(err) {
-				logger.Warn().Err(err).Str("file", m.original).Msg("Error removing new file during rollback")
+		if err := os.Rename(srcPath, dstPath); err != nil {
+			rollbackErr = fmt.Errorf("failed to sync file: %w", err)
+			if backupPath != "" {
+				os.Rename(backupPath, dstPath)
 			}
-			if err := os.Rename(m.backup, m.original); err != nil {
-				logger.Warn().Err(err).Str("file", m.backup).Msg("Error restoring backup")
-			}
-			logger.Info().Str("file", m.original).Msg("Restored backup")
+			break
 		}
-		return err
+
+		operations = append(operations, fileOperation{
+			original: dstPath,
+			backup:   backupPath,
+		})
 	}
 
-	for _, m := range modified {
-		if err := os.Remove(m.backup); err != nil {
-			logger.Warn().Err(err).Str("backup", m.backup).Msg("Failed to remove backup")
+	if rollbackErr != nil {
+		logger.Error().Err(rollbackErr).Msg("Initiating rollback")
+
+		for i := len(operations) - 1; i >= 0; i-- {
+			op := operations[i]
+
+			if err := os.Remove(op.original); err != nil && !os.IsNotExist(err) {
+				logger.Warn().Err(err).Str("file", op.original).Msg("Failed to remove during rollback")
+			}
+
+			if op.backup != "" {
+				if err := os.Rename(op.backup, op.original); err != nil {
+					logger.Warn().Err(err).Str("backup", op.backup).Msg("Failed to restore backup")
+				}
+			}
+		}
+		return rollbackErr
+	}
+
+	for _, op := range operations {
+		if op.backup != "" {
+			if err := os.Remove(op.backup); err != nil {
+				logger.Warn().Err(err).Str("backup", op.backup).Msg("Failed to clean up backup")
+			}
 		}
 	}
 
-	logger.Info().Int("files_installed", installedFiles).Str("directory", target).Msg("Installed plugins")
+	logger.Info().Int("files", len(operations)).Msg("Sync completed successfully")
 	return nil
 }
 
@@ -478,34 +476,4 @@ func fileChecksum(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
-func moveOrCopyFile(src, dst string, mode os.FileMode) error {
-	err := os.Rename(src, dst)
-	if err == nil {
-		return nil
-	}
-	if linkErr, ok := err.(*os.LinkError); ok && errors.Is(linkErr.Err, syscall.EXDEV) {
-		in, err := os.Open(src)
-		if err != nil {
-			return err
-		}
-		defer in.Close()
-
-		out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
-		if err != nil {
-			return err
-		}
-		defer out.Close()
-
-		if _, err := io.Copy(out, in); err != nil {
-			return err
-		}
-
-		if err := os.Remove(src); err != nil {
-			return err
-		}
-		return nil
-	}
-	return err
 }
