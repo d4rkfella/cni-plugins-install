@@ -24,7 +24,7 @@ const (
 	baseURL         = "https://github.com/containernetworking/plugins/releases/download"
 	tarFormat       = "cni-plugins-linux-amd64-%s.tgz"
 	shaFormat       = "cni-plugins-linux-amd64-%s.tgz.sha256"
-	targetDir       = "/tmp/host/opt/cni/bin"
+	targetDir       = "/host/opt/cni/bin"
 	downloadTimeout = 15 * time.Minute
 	bufferSize      = 1 * 1024 * 1024
 )
