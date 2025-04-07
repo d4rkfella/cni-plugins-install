@@ -32,6 +32,7 @@ var (
 	downloadTimeout = 15 * time.Minute
 	bufferSize      = 1 * 1024 * 1024
 	maxRetries      = 3
+	backupFiles     sync.Map
 )
 
 type cleanup struct {
@@ -69,13 +70,13 @@ func main() {
 
 	rand.Seed(time.Now().UnixNano())
 
-	if err := run(logger); err != nil {
+	if err := run(context.Background(), logger); err != nil {
 		logger.Fatal().Err(err).Msg("Application terminated with error")
 	}
 }
 
-func run(logger zerolog.Logger) error {
-	mainCtx, cancel := context.WithCancel(context.Background())
+func run(ctx context.Context, logger zerolog.Logger) error {
+	mainCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	cl := &cleanup{}
@@ -107,7 +108,7 @@ func run(logger zerolog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("failed to create staging directory: %w", err)
 	}
-	defer os.RemoveAll(stagingDir)
+	cl.tempDir = stagingDir
 
 	tarURL := fmt.Sprintf("%s/%s/%s", baseURL, version, fmt.Sprintf(tarFormat, version))
 	shaURL := fmt.Sprintf("%s/%s/%s", baseURL, version, fmt.Sprintf(shaFormat, version))
@@ -386,17 +387,22 @@ func atomicSync(ctx context.Context, staging, target string, logger zerolog.Logg
 
 		var backupPath string
 		if _, err := os.Stat(dstPath); err == nil {
-			backupPath = fmt.Sprintf("%s.backup-%s", dstPath, time.Now().Format("20060102T150405"))
+			backupPath = filepath.Join(target, entry.Name()+".backup-"+time.Now().Format("20060102T150405"))
 			if err := os.Rename(dstPath, backupPath); err != nil {
 				rollbackErr = fmt.Errorf("backup failed: %w", err)
 				break
 			}
+			logger.Debug().Str("path", backupPath).Msg("Created backup file")
+
+			backupFiles.Store(backupPath, true)
 		}
 
 		if err := os.Rename(srcPath, dstPath); err != nil {
 			rollbackErr = fmt.Errorf("failed to sync file: %w", err)
 			if backupPath != "" {
-				os.Rename(backupPath, dstPath)
+				if rerr := os.Rename(backupPath, dstPath); rerr != nil {
+					logger.Error().Err(rerr).Msg("Failed to restore backup during rollback")
+				}
 			}
 			break
 		}
@@ -409,14 +415,11 @@ func atomicSync(ctx context.Context, staging, target string, logger zerolog.Logg
 
 	if rollbackErr != nil {
 		logger.Error().Err(rollbackErr).Msg("Initiating rollback")
-
 		for i := len(operations) - 1; i >= 0; i-- {
 			op := operations[i]
-
 			if err := os.Remove(op.original); err != nil && !os.IsNotExist(err) {
 				logger.Warn().Err(err).Str("file", op.original).Msg("Failed to remove during rollback")
 			}
-
 			if op.backup != "" {
 				if err := os.Rename(op.backup, op.original); err != nil {
 					logger.Warn().Err(err).Str("backup", op.backup).Msg("Failed to restore backup")
@@ -428,8 +431,10 @@ func atomicSync(ctx context.Context, staging, target string, logger zerolog.Logg
 
 	for _, op := range operations {
 		if op.backup != "" {
-			if err := os.Remove(op.backup); err != nil {
-				logger.Warn().Err(err).Str("backup", op.backup).Msg("Failed to clean up backup")
+			if _, exists := backupFiles.Load(op.backup); !exists {
+				if err := os.Remove(op.backup); err != nil {
+					logger.Warn().Err(err).Str("backup", op.backup).Msg("Failed to clean up backup")
+				}
 			}
 		}
 	}
