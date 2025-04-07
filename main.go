@@ -99,85 +99,92 @@ func main() {
 }
 
 func run() error {
-    mainCtx, cancelMain := context.WithCancel(context.Background())
-    defer cancelMain()
+	mainCtx, cancelMain := context.WithCancel(context.Background())
+	defer cancelMain()
 
-    cl := &cleanup{}
-    defer cl.execute()
+	cl := &cleanup{}
+	defer cl.execute()
 
-    sigChan := make(chan os.Signal, 1)
-    signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-    go func() {
-        sig := <-sigChan
-        log.Printf("Received signal: %s. Cleaning up...", sig)
-        cancelMain()
-    }()
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		sig := <-sigChan
+		log.Printf("Received signal: %s. Cleaning up...", sig)
+		cancelMain()
+	}()
 
-    version := os.Getenv("CNI_PLUGINS_VERSION")
-    if version == "" {
-        return fmt.Errorf("CNI_PLUGINS_VERSION environment variable not set")
-    }
+	version := os.Getenv("CNI_PLUGINS_VERSION")
+	if version == "" {
+		return fmt.Errorf("CNI_PLUGINS_VERSION environment variable not set")
+	}
 
-    log.Println("Starting CNI plugins installation...")
+	log.Println("Starting CNI plugins installation...")
 
-    parentDir := filepath.Dir(targetDir)
-    if err := os.MkdirAll(parentDir, 0755); err != nil {
-        return fmt.Errorf("failed to create parent directory %s: %w", parentDir, err)
-    }
+	parentDir := filepath.Dir(targetDir)
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		return fmt.Errorf("failed to create parent directory %s: %w", parentDir, err)
+	}
 
-    stagingDir, err := os.MkdirTemp(parentDir, "cni-staging-")
-    if err != nil {
-        return fmt.Errorf("failed to create staging directory: %w", err)
-    }
-    cl.tempDir = stagingDir
-    log.Printf("Using staging directory: %s", stagingDir)
+	stagingDir, err := os.MkdirTemp(parentDir, "cni-staging-")
+	if err != nil {
+		return fmt.Errorf("failed to create staging directory: %w", err)
+	}
+	cl.tempDir = stagingDir
+	log.Printf("Using staging directory: %s", stagingDir)
 
-    tarURL := fmt.Sprintf("%s/%s/%s", baseURL, version, fmt.Sprintf(tarFormat, version))
-    shaURL := fmt.Sprintf("%s/%s/%s", baseURL, version, fmt.Sprintf(shaFormat, version))
+	tarURL := fmt.Sprintf("%s/%s/%s", baseURL, version, fmt.Sprintf(tarFormat, version))
+	shaURL := fmt.Sprintf("%s/%s/%s", baseURL, version, fmt.Sprintf(shaFormat, version))
 
-    downloadCtx, cancelDownloads := context.WithTimeout(mainCtx, 15*time.Minute)
-    defer cancelDownloads()
+	downloadCtx, cancelDownloads := context.WithTimeout(mainCtx, 15*time.Minute)
+	defer cancelDownloads()
 
-    g, groupCtx := errgroup.WithContext(downloadCtx)
-    var tarPath, shaPath string
+	g, groupCtx := errgroup.WithContext(downloadCtx)
+	var tarPath, shaPath string
 
-    g.Go(func() error {
-        path, err := downloadFile(groupCtx, tarURL, cl)
-        if err != nil {
-            return fmt.Errorf("tar download failed: %w", err)
-        }
-        tarPath = path
-        return nil
-    })
+	g.Go(func() error {
+		path, err := downloadFile(groupCtx, tarURL, cl)
+		if err != nil {
+			return fmt.Errorf("tar download failed: %w", err)
+		}
+		tarPath = path
+		return nil
+	})
 
-    g.Go(func() error {
-        path, err := downloadFile(groupCtx, shaURL, cl)
-        if err != nil {
-            return fmt.Errorf("sha download failed: %w", err)
-        }
-        shaPath = path
-        return nil
-    })
+	g.Go(func() error {
+		path, err := downloadFile(groupCtx, shaURL, cl)
+		if err != nil {
+			return fmt.Errorf("sha download failed: %w", err)
+		}
+		shaPath = path
+		return nil
+	})
 
-    if err := g.Wait(); err != nil {
-        return err
-    }
+	if err := g.Wait(); err != nil {
+		return err
+	}
 
-    if err := verifyChecksum(tarPath, shaPath); err != nil {
-        return fmt.Errorf("checksum verification failed: %w", err)
-    }
+	if err := verifyChecksum(tarPath, shaPath); err != nil {
+		return fmt.Errorf("checksum verification failed: %w", err)
+	}
 
-    if err := extractTarGz(mainCtx, tarPath, stagingDir, cl); err != nil {
-        return fmt.Errorf("extraction failed: %w", err)
-    }
+	if err := extractTarGz(mainCtx, tarPath, stagingDir, cl); err != nil {
+		return fmt.Errorf("extraction failed: %w", err)
+	}
 
-    if err := os.Rename(stagingDir, targetDir); err != nil {
-        return fmt.Errorf("atomic install failed: %w", err)
-    }
-    cl.tempDir = ""
+	if _, err := os.Stat(targetDir); err == nil {
+		log.Printf("Removing existing directory: %s", targetDir)
+		if err := os.RemoveAll(targetDir); err != nil {
+			return fmt.Errorf("failed to remove existing directory: %w", err)
+		}
+	}
 
-    log.Println("Successfully installed CNI plugins")
-    return nil
+	if err := os.Rename(stagingDir, targetDir); err != nil {
+		return fmt.Errorf("atomic install failed: %w", err)
+	}
+	cl.tempDir = ""
+
+	log.Println("Successfully installed CNI plugins")
+	return nil
 }
 
 func downloadFile(ctx context.Context, url string, cl *cleanup) (string, error) {
@@ -281,35 +288,35 @@ func shouldRetryStatus(statusCode int) bool {
 }
 
 func verifyChecksum(filePath, shaPath string) error {
-    log.Println("Verifying checksum...")
+	log.Println("Verifying checksum...")
 
-    shaData, err := os.ReadFile(shaPath)
-    if err != nil {
-        return fmt.Errorf("read SHA file failed: %w", err)
-    }
-    if len(shaData) < 64 {
-        return fmt.Errorf("invalid SHA256 file format")
-    }
-    expectedHash := string(shaData[:64])
+	shaData, err := os.ReadFile(shaPath)
+	if err != nil {
+		return fmt.Errorf("read SHA file failed: %w", err)
+	}
+	if len(shaData) < 64 {
+		return fmt.Errorf("invalid SHA256 file format")
+	}
+	expectedHash := string(shaData[:64])
 
-    f, err := os.Open(filePath)
-    if err != nil {
-        return fmt.Errorf("open file failed: %w", err)
-    }
-    defer f.Close()
+	f, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("open file failed: %w", err)
+	}
+	defer f.Close()
 
-    hasher := sha256.New()
-    if _, err := io.Copy(hasher, f); err != nil {
-        return fmt.Errorf("hash computation failed: %w", err)
-    }
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, f); err != nil {
+		return fmt.Errorf("hash computation failed: %w", err)
+	}
 
-    actualHash := hex.EncodeToString(hasher.Sum(nil))
-    if actualHash != expectedHash {
-        return fmt.Errorf("checksum mismatch\nExpected: %s\nActual:   %s",
-            expectedHash, actualHash)
-    }
+	actualHash := hex.EncodeToString(hasher.Sum(nil))
+	if actualHash != expectedHash {
+		return fmt.Errorf("checksum mismatch\nExpected: %s\nActual:   %s",
+			expectedHash, actualHash)
+	}
 
-    return nil
+	return nil
 }
 
 func extractTarGz(ctx context.Context, src, dst string, cl *cleanup) error {
