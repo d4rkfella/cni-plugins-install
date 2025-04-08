@@ -384,6 +384,12 @@ func atomicSync(ctx context.Context, staging, target string, logger zerolog.Logg
 			break
 		}
 
+		same, err := sameChecksum(srcPath, dstPath)
+		if err == nil && same {
+			logger.Debug().Str("file", entry.Name()).Msg("Skipped unchanged file")
+			continue
+		}
+
 		var backupPath string
 		if _, err := os.Stat(dstPath); err == nil {
 			backupPath = filepath.Join(target, entry.Name()+".backup-"+time.Now().Format("20060102T150405"))
