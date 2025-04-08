@@ -26,7 +26,7 @@ import (
 var (
 	httpClient      = &http.Client{Transport: &http.Transport{MaxIdleConns: 10, IdleConnTimeout: 30 * time.Second, ForceAttemptHTTP2: true}}
 	baseURL         = "https://github.com/containernetworking/plugins/releases/download"
-	targetDir       = "/tmp/host/opt/cni/bin"
+	targetDir       = "/host/opt/cni/bin"
 	tarFormat       = "cni-plugins-linux-amd64-%s.tgz"
 	shaFormat       = "cni-plugins-linux-amd64-%s.tgz.sha256"
 	downloadTimeout = 15 * time.Minute
