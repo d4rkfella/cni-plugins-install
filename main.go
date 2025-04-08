@@ -23,15 +23,38 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const (
+	dirPerm        = 0o755
+	filePerm       = 0o644
+	backupPrefix   = ".backup-"
+	backupMaxAge   = 24 * time.Hour
+	tempFilePrefix = "cni-download-"
+)
+
+type Config struct {
+	BaseURL         string
+	TargetDir       string
+	DownloadTimeout time.Duration
+	MaxRetries      int
+	BufferSize      int
+}
+
+var cfg = Config{
+	BaseURL:         "https://github.com/containernetworking/plugins/releases/download",
+	TargetDir:       "/host/opt/cni/bin",
+	DownloadTimeout: 2 * time.Minute,
+	MaxRetries:      3,
+	BufferSize:      1 * 1024 * 1024,
+}
+
 var (
-	httpClient      = &http.Client{Transport: &http.Transport{MaxIdleConns: 10, IdleConnTimeout: 30 * time.Second, ForceAttemptHTTP2: true}}
-	baseURL         = "https://github.com/containernetworking/plugins/releases/download"
-	targetDir       = "/host/opt/cni/bin"
-	tarFormat       = "cni-plugins-linux-amd64-%s.tgz"
-	shaFormat       = "cni-plugins-linux-amd64-%s.tgz.sha256"
-	downloadTimeout = 15 * time.Minute
-	bufferSize      = 1 * 1024 * 1024
-	maxRetries      = 3
+	httpClient = &http.Client{
+		Transport: &http.Transport{
+			MaxIdleConns:      10,
+			IdleConnTimeout:   30 * time.Second,
+			ForceAttemptHTTP2: true,
+		},
+	}
 )
 
 type cleanup struct {
@@ -52,242 +75,248 @@ func (c *cleanup) execute(logger zerolog.Logger) {
 	c.mu.Unlock()
 
 	for i := len(files) - 1; i >= 0; i-- {
-		if err := os.Remove(files[i]); err != nil && !os.IsNotExist(err) {
-			logger.Error().Err(err).Str("file", files[i]).Msg("Failed to remove file")
+		logger.Debug().Str("file", files[i]).Msg("Cleaning file")
+
+		if err := secureRemove(files[i]); err != nil {
+			logger.Warn().Err(err).Str("file", files[i]).Msg("Cleanup failed")
 		}
 	}
 
 	if c.tempDir != "" {
-		if err := os.RemoveAll(c.tempDir); err != nil && !os.IsNotExist(err) {
-			logger.Error().Err(err).Str("dir", c.tempDir).Msg("Failed to remove temp directory")
+		logger.Debug().Str("dir", c.tempDir).Msg("Cleaning temp directory")
+		if err := secureRemoveAll(c.tempDir); err != nil {
+			logger.Warn().Err(err).Str("dir", c.tempDir).Msg("Temp directory cleanup failed")
 		}
 	}
 }
 
+func createLogger(logLevel string) zerolog.Logger {
+	level := zerolog.InfoLevel
+	switch logLevel {
+	case "debug":
+		level = zerolog.DebugLevel
+	case "warn":
+		level = zerolog.WarnLevel
+	case "error":
+		level = zerolog.ErrorLevel
+	case "fatal":
+		level = zerolog.FatalLevel
+	}
+
+	return zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).
+		Level(level).
+		With().
+		Timestamp().
+		Logger()
+}
+
 func main() {
-	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	logLevel := os.Getenv("LOG_LEVEL")
+	if logLevel == "" {
+		logLevel = "info"
+	}
+
+	logger := createLogger(logLevel)
 
 	rand.Seed(time.Now().UnixNano())
 
-	if err := run(context.Background(), logger); err != nil {
-		logger.Fatal().Err(err).Msg("Application terminated with error")
+	if err := run(ctx, logger); err != nil {
+		logger.Fatal().Err(err).Msg("Installation failed")
 	}
 }
 
 func run(ctx context.Context, logger zerolog.Logger) error {
-	mainCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
 	cl := &cleanup{}
 	defer cl.execute(logger)
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		select {
-		case sig := <-sigChan:
-			logger.Warn().Str("signal", sig.String()).Msg("Received termination signal, cleaning up...")
-			cancel()
-		case <-mainCtx.Done():
-		}
-	}()
 
 	version := os.Getenv("CNI_PLUGINS_VERSION")
 	if version == "" {
 		return errors.New("CNI_PLUGINS_VERSION environment variable not set")
 	}
 
-	logger.Info().Str("version", version).Msg("Starting CNI plugins installation...")
+	logger.Info().Str("version", version).Msg("Starting installation")
 
-	if err := os.MkdirAll(targetDir, 0755); err != nil {
-		return fmt.Errorf("failed to create target directory: %w", err)
+	if err := os.MkdirAll(cfg.TargetDir, dirPerm); err != nil {
+		return fmt.Errorf("create target directory: %w", err)
 	}
 
-	stagingDir, err := os.MkdirTemp(targetDir, ".cni-staging-")
+	stagingDir, err := os.MkdirTemp(cfg.TargetDir, ".cni-staging-*")
 	if err != nil {
-		return fmt.Errorf("failed to create staging directory: %w", err)
+		return fmt.Errorf("create staging directory: %w", err)
 	}
 	cl.tempDir = stagingDir
 
-	tarURL := fmt.Sprintf("%s/%s/%s", baseURL, version, fmt.Sprintf(tarFormat, version))
-	shaURL := fmt.Sprintf("%s/%s/%s", baseURL, version, fmt.Sprintf(shaFormat, version))
+	logger.Debug().Str("staging_dir", stagingDir).Msg("Staging directory created")
 
-	downloadCtx, cancelDownloads := context.WithTimeout(mainCtx, downloadTimeout)
-	defer cancelDownloads()
+	tarName := fmt.Sprintf("cni-plugins-linux-amd64-%s.tgz", version)
+	shaName := fmt.Sprintf("%s.sha256", tarName)
+	tarURL := fmt.Sprintf("%s/%s/%s", cfg.BaseURL, version, tarName)
+	shaURL := fmt.Sprintf("%s/%s/%s", cfg.BaseURL, version, shaName)
+
+	downloadCtx, cancel := context.WithTimeout(ctx, cfg.DownloadTimeout)
+	defer cancel()
 
 	var tarPath, shaPath string
-	g, groupCtx := errgroup.WithContext(downloadCtx)
+	g, gCtx := errgroup.WithContext(downloadCtx)
 
 	g.Go(func() error {
-		path, err := downloadFile(groupCtx, tarURL, cl, logger)
-		if err != nil {
-			return fmt.Errorf("tar download failed: %w", err)
-		}
-		tarPath = path
-		return nil
+		var err error
+		tarPath, err = downloadFile(gCtx, tarURL, cl, logger)
+		return err
 	})
 
 	g.Go(func() error {
-		path, err := downloadFile(groupCtx, shaURL, cl, logger)
-		if err != nil {
-			return fmt.Errorf("sha download failed: %w", err)
-		}
-		shaPath = path
-		return nil
+		var err error
+		shaPath, err = downloadFile(gCtx, shaURL, cl, logger)
+		return err
 	})
 
 	if err := g.Wait(); err != nil {
-		return err
+		return fmt.Errorf("download failed %w", err)
 	}
 
 	if err := verifyChecksum(tarPath, shaPath, logger); err != nil {
 		return fmt.Errorf("checksum verification failed: %w", err)
 	}
 
-	if err := extractTarGz(mainCtx, tarPath, stagingDir, logger); err != nil {
-		return fmt.Errorf("extraction failed: %w", err)
+	if err := extractTarGz(ctx, tarPath, stagingDir, logger); err != nil {
+		return fmt.Errorf("archive extraction failed: %w", err)
 	}
 
-	if err := atomicSync(mainCtx, stagingDir, targetDir, logger); err != nil {
+	if err := atomicSync(ctx, stagingDir, cfg.TargetDir, logger); err != nil {
 		return fmt.Errorf("atomic sync failed: %w", err)
 	}
 
-	logger.Info().Msg("CNI plugins installed successfully.")
+	logger.Info().Msg("Installation completed successfully")
 	return nil
 }
 
 func downloadFile(ctx context.Context, url string, cl *cleanup, logger zerolog.Logger) (string, error) {
-	var lastErr error
+	var resultPath string
 
-	for retry := 0; retry < maxRetries; retry++ {
-		select {
-		case <-ctx.Done():
-			logger.Error().Err(ctx.Err()).Msg("Context cancelled during download")
-			return "", ctx.Err()
-		default:
-		}
-
-		tmpFile, err := os.CreateTemp("", "cni-download-*")
+	err := withRetry(ctx, logger, cfg.MaxRetries, func(attempt int) error {
+		tmpFile, err := os.CreateTemp("", tempFilePrefix+"*")
 		if err != nil {
-			lastErr = fmt.Errorf("temp file creation failed: %w", err)
-			logger.Error().Err(err).Int("retry", retry+1).Int("max_retries", maxRetries).Msg("Error creating temp file")
-			continue
+			return fmt.Errorf("create temp file: %w", err)
 		}
+		defer tmpFile.Close()
+
 		tmpName := tmpFile.Name()
 		cl.addFile(tmpName)
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
-			lastErr = fmt.Errorf("create request failed: %w", err)
-			logger.Error().Err(err).Int("retry", retry+1).Int("max_retries", maxRetries).Msg("Error creating request")
-			tmpFile.Close()
-			os.Remove(tmpName)
-			continue
+			return fmt.Errorf("create request: %w", err)
 		}
 		req.Header.Set("User-Agent", "CNI-Installer/1.0")
 
 		resp, err := httpClient.Do(req)
 		if err != nil {
-			lastErr = fmt.Errorf("HTTP request failed (attempt %d): %w", retry+1, err)
-			logger.Error().Err(err).Int("retry", retry+1).Int("max_retries", maxRetries).Msg("HTTP request failed")
-			tmpFile.Close()
-			os.Remove(tmpName)
-			sleepWithJitter(retry)
-			continue
+			return fmt.Errorf("http request: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("unexpected status: %s", resp.Status)
 		}
 
-		func() {
-			defer resp.Body.Close()
-
-			if resp.StatusCode != http.StatusOK {
-				lastErr = fmt.Errorf("bad status %s (attempt %d)", resp.Status, retry+1)
-				logger.Error().Str("status", resp.Status).Int("retry", retry+1).Int("max_retries", maxRetries).Msg("HTTP request returned non-OK status")
-				tmpFile.Close()
-				os.Remove(tmpName)
-				sleepWithJitter(retry)
-				return
-			}
-
-			buf := make([]byte, bufferSize)
-			if _, err := io.CopyBuffer(tmpFile, resp.Body, buf); err != nil {
-				lastErr = fmt.Errorf("download copy failed (attempt %d): %w", retry+1, err)
-				tmpFile.Close()
-				os.Remove(tmpName)
-				sleepWithJitter(retry)
-				return
-			}
-
-			tmpFile.Close()
-			logger.Info().Str("file", tmpName).Int64("size", fileSize(tmpName)).Msg("Downloaded file")
-			lastErr = nil
-		}()
-
-		if lastErr == nil {
-			return tmpName, nil
+		buf := make([]byte, cfg.BufferSize)
+		if _, err := io.CopyBuffer(tmpFile, resp.Body, buf); err != nil {
+			return fmt.Errorf("download content: %w", err)
 		}
-	}
 
-	return "", fmt.Errorf("download failed after %d attempts: %w", maxRetries, errors.Join(lastErr))
+		resultPath = tmpName
+		logger.Info().
+			Str("url", url).
+			Str("path", tmpName).
+			Int64("size", fileSize(tmpName)).
+			Msg("Download completed")
+		return nil
+	})
+
+	return resultPath, err
 }
 
-func sleepWithJitter(retry int) {
-	backoff := time.Second * time.Duration(1<<retry)
+func withRetry(ctx context.Context, logger zerolog.Logger, maxAttempts int, fn func(int) error) error {
+	var lastErr error
+
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		err := fn(attempt)
+		if err == nil {
+			return nil
+		}
+
+		logger.Warn().
+			Err(err).
+			Int("attempt", attempt+1).
+			Int("max_attempts", maxAttempts).
+			Msg("Operation failed, retrying")
+
+		lastErr = err
+		sleepWithJitter(attempt)
+	}
+
+	return fmt.Errorf("after %d attempts: %w", maxAttempts, lastErr)
+}
+
+func sleepWithJitter(attempt int) {
+	base := time.Second * time.Duration(1<<attempt)
 	jitter := time.Duration(rand.Intn(1000)) * time.Millisecond
-	time.Sleep(backoff + jitter)
-}
-
-func fileSize(path string) int64 {
-	info, err := os.Stat(path)
-	if err != nil {
-		return 0
-	}
-	return info.Size()
+	time.Sleep(base + jitter)
 }
 
 func verifyChecksum(filePath, shaPath string, logger zerolog.Logger) error {
-	logger.Info().Msg("Verifying checksum...")
-
-	shaData, err := os.ReadFile(shaPath)
+	expectedHash, err := readSHAFile(shaPath)
 	if err != nil {
-		return fmt.Errorf("read SHA file failed: %w", err)
+		return fmt.Errorf("read sha file: %w", err)
 	}
-	fields := strings.Fields(string(shaData))
-	if len(fields) == 0 || len(fields[0]) != 64 {
-		return fmt.Errorf("invalid SHA256 file format")
-	}
-	expectedHash := fields[0]
 
-	f, err := os.Open(filePath)
+	actualHash, err := fileChecksum(context.Background(), filePath)
 	if err != nil {
-		return fmt.Errorf("open file failed: %w", err)
-	}
-	defer f.Close()
-
-	hasher := sha256.New()
-	if _, err := io.Copy(hasher, f); err != nil {
-		return fmt.Errorf("hash computation failed: %w", err)
+		return fmt.Errorf("compute checksum: %w", err)
 	}
 
-	actualHash := hex.EncodeToString(hasher.Sum(nil))
 	if actualHash != expectedHash {
-		return fmt.Errorf("checksum mismatch\nExpected: %s\nActual:   %s", expectedHash, actualHash)
+		return fmt.Errorf("checksum mismatch (expected: %s, actual: %s)", expectedHash, actualHash)
 	}
 
+	logger.Info().Msg("Checksum verification successful")
 	return nil
 }
 
-func extractTarGz(ctx context.Context, src, dst string, logger zerolog.Logger) error {
-	logger.Info().Msg("Extracting files...")
+func readSHAFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read file: %w", err)
+	}
 
+	fields := strings.Fields(string(data))
+	if len(fields) < 1 || len(fields[0]) != 64 {
+		return "", errors.New("invalid sha256 format")
+	}
+
+	return fields[0], nil
+}
+
+func extractTarGz(ctx context.Context, src, dst string, logger zerolog.Logger) error {
 	f, err := os.Open(src)
 	if err != nil {
-		return fmt.Errorf("open archive failed: %w", err)
+		return fmt.Errorf("open archive: %w", err)
 	}
 	defer f.Close()
 
 	gzr, err := gzip.NewReader(f)
 	if err != nil {
-		return fmt.Errorf("gzip reader failed: %w", err)
+		return fmt.Errorf("create gzip reader: %w", err)
 	}
 	defer gzr.Close()
 
@@ -295,69 +324,75 @@ func extractTarGz(ctx context.Context, src, dst string, logger zerolog.Logger) e
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Error().Err(ctx.Err()).Msg("Context cancelled during extraction")
 			return ctx.Err()
 		default:
 		}
 
 		header, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("tar read failed: %w", err)
+			return fmt.Errorf("read tar header: %w", err)
 		}
 
 		if header.Typeflag == tar.TypeReg {
-			fileName := filepath.Base(header.Name)
-			target := filepath.Join(dst, fileName)
-
-			if err := writeFile(target, tr, header.FileInfo().Mode(), logger); err != nil {
-				return err
+			target := filepath.Join(dst, filepath.Base(header.Name))
+			if err := writeFileAtomic(target, tr, header.FileInfo().Mode(), logger); err != nil {
+				return fmt.Errorf("write file %s: %w", header.Name, err)
 			}
-			logger.Info().Str("file", target).Msg("Extracted file")
 		}
 	}
+
 	return nil
 }
 
-func writeFile(path string, r io.Reader, mode os.FileMode, logger zerolog.Logger) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return fmt.Errorf("failed to create parent directory: %w", err)
+func writeFileAtomic(path string, r io.Reader, mode os.FileMode, logger zerolog.Logger) error {
+	if err := os.MkdirAll(filepath.Dir(path), dirPerm); err != nil {
+		return fmt.Errorf("create parent directory: %w", err)
 	}
 
 	tmpPath := path + ".tmp"
-	tmpFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
-	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
-	}
-	defer tmpFile.Close()
-
-	if _, err := io.Copy(tmpFile, r); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("copy failed: %w", err)
+	if err := writeFile(tmpPath, r, mode); err != nil {
+		return err
 	}
 
 	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("atomic rename failed: %w", err)
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("atomic rename: %w", err)
+	}
+
+	logger.Debug().Str("path", path).Msg("File written successfully")
+	return nil
+}
+
+func writeFile(path string, r io.Reader, mode os.FileMode) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	if err != nil {
+		return fmt.Errorf("create file: %w", err)
+	}
+	defer f.Close()
+
+	if _, err := io.Copy(f, r); err != nil {
+		_ = os.Remove(path)
+		return fmt.Errorf("write content: %w", err)
 	}
 
 	return nil
 }
 
 func atomicSync(ctx context.Context, staging, target string, logger zerolog.Logger) error {
-	type fileOperation struct {
+	defer cleanupOldBackups(target, backupMaxAge, logger)
+
+	var operations []struct {
 		original string
 		backup   string
 	}
-
-	var operations []fileOperation
 	var rollbackErr error
 
 	entries, err := os.ReadDir(staging)
 	if err != nil {
-		return fmt.Errorf("failed to read staging directory: %w", err)
+		return fmt.Errorf("read staging directory: %w", err)
 	}
 
 	for _, entry := range entries {
@@ -368,120 +403,206 @@ func atomicSync(ctx context.Context, staging, target string, logger zerolog.Logg
 		srcPath := filepath.Join(staging, entry.Name())
 		dstPath := filepath.Join(target, entry.Name())
 
-		select {
-		case <-ctx.Done():
-			rollbackErr = fmt.Errorf("operation cancelled: %w", ctx.Err())
-			break
-		default:
-		}
-
 		if rollbackErr != nil {
 			break
 		}
 
-		if targetInfo, err := os.Stat(dstPath); err == nil && targetInfo.IsDir() {
-			rollbackErr = fmt.Errorf("can't replace directory with file: %s", dstPath)
-			break
+		if err := processFile(ctx, srcPath, dstPath, &operations, &rollbackErr, logger); err != nil {
+			rollbackErr = err
 		}
-
-		same, err := sameChecksum(srcPath, dstPath)
-		if err == nil && same {
-			logger.Debug().Str("file", entry.Name()).Msg("Skipped unchanged file")
-			continue
-		}
-
-		var backupPath string
-		if _, err := os.Stat(dstPath); err == nil {
-			backupPath = filepath.Join(target, entry.Name()+".backup-"+time.Now().Format("20060102T150405"))
-			if err := os.Rename(dstPath, backupPath); err != nil {
-				rollbackErr = fmt.Errorf("backup failed: %w", err)
-				break
-			}
-			logger.Debug().Str("path", backupPath).Msg("Created backup file")
-		}
-
-		if err := os.Rename(srcPath, dstPath); err != nil {
-			rollbackErr = fmt.Errorf("failed to sync file: %w", err)
-			if backupPath != "" {
-				if rerr := os.Rename(backupPath, dstPath); rerr != nil {
-					logger.Error().Err(rerr).Msg("Failed to restore backup during rollback")
-				}
-			}
-			break
-		}
-
-		operations = append(operations, fileOperation{
-			original: dstPath,
-			backup:   backupPath,
-		})
 	}
 
 	if rollbackErr != nil {
-		logger.Error().Err(rollbackErr).Msg("Initiating rollback")
-		for i := len(operations) - 1; i >= 0; i-- {
-			op := operations[i]
-			if err := os.Remove(op.original); err != nil && !os.IsNotExist(err) {
-				logger.Warn().Err(err).Str("file", op.original).Msg("Failed to remove during rollback")
-			}
-			if op.backup != "" {
-				if err := os.Rename(op.backup, op.original); err != nil {
-					logger.Warn().Err(err).Str("backup", op.backup).Msg("Failed to restore backup")
-				}
-			}
-		}
+		performRollback(operations, logger)
 		return rollbackErr
 	}
 
-	for _, op := range operations {
-		if op.backup != "" {
-			if err := os.Remove(op.backup); err != nil && !os.IsNotExist(err) {
-				logger.Warn().Err(err).Str("backup", op.backup).Msg("Failed to clean up backup")
-			} else {
-				logger.Debug().Str("backup", op.backup).Msg("Cleaned up backup file")
-			}
-		}
-	}
-
-	logger.Info().Int("files", len(operations)).Msg("Sync completed successfully")
+	cleanupBackups(operations, logger)
 	return nil
 }
 
-func sameChecksum(path1, path2 string) (bool, error) {
-	var wg sync.WaitGroup
-	wg.Add(2)
+func processFile(ctx context.Context, src, dst string, operations *[]struct{ original, backup string }, rollbackErr *error, logger zerolog.Logger) error {
+	select {
+	case <-ctx.Done():
+		*rollbackErr = fmt.Errorf("operation cancelled: %w", ctx.Err())
+		return nil
+	default:
+	}
 
+	if targetInfo, err := os.Stat(dst); err == nil && targetInfo.IsDir() {
+		return fmt.Errorf("cannot replace directory with file: %s", dst)
+	}
+
+	same, err := sameChecksum(ctx, src, dst)
+	if err == nil && same {
+		logger.Debug().Str("file", filepath.Base(src)).Msg("Skipping unchanged file")
+		return nil
+	}
+
+	backupPath, err := createBackup(dst, logger)
+	if err != nil {
+		return err
+	}
+
+	if err := os.Rename(src, dst); err != nil {
+		return handleSyncError(dst, backupPath, err, logger)
+	}
+
+	*operations = append(*operations, struct{ original, backup string }{dst, backupPath})
+	return nil
+}
+
+func createBackup(dst string, logger zerolog.Logger) (string, error) {
+	if _, err := os.Stat(dst); os.IsNotExist(err) {
+		return "", nil
+	}
+
+	backupPath := fmt.Sprintf("%s%s%s", dst, backupPrefix, time.Now().Format("20060102T150405"))
+	if err := os.Rename(dst, backupPath); err != nil {
+		return "", fmt.Errorf("create backup: %w", err)
+	}
+
+	logger.Debug().Str("path", backupPath).Msg("Created backup")
+	return backupPath, nil
+}
+
+func handleSyncError(dst, backup string, err error, logger zerolog.Logger) error {
+	logger.Error().Err(err).Str("path", dst).Msg("Sync failed")
+
+	if backup != "" {
+		if rerr := os.Rename(backup, dst); rerr != nil {
+			logger.Error().Err(rerr).Msg("Backup restoration failed")
+		}
+	}
+
+	return fmt.Errorf("sync file %s: %w", dst, err)
+}
+
+func performRollback(ops []struct{ original, backup string }, logger zerolog.Logger) {
+	for i := len(ops) - 1; i >= 0; i-- {
+		op := ops[i]
+		if err := secureRemove(op.original); err != nil {
+			logger.Warn().Err(err).Str("path", op.original).Msg("Rollback cleanup failed")
+		}
+
+		if op.backup != "" {
+			if err := os.Rename(op.backup, op.original); err != nil {
+				logger.Warn().Err(err).Str("backup", op.backup).Msg("Backup restoration failed")
+			}
+		}
+	}
+}
+
+func cleanupBackups(ops []struct{ original, backup string }, logger zerolog.Logger) {
+	for _, op := range ops {
+		if op.backup != "" {
+			if err := secureRemove(op.backup); err != nil {
+				logger.Warn().Err(err).Str("backup", op.backup).Msg("Backup cleanup failed")
+			}
+		}
+	}
+}
+
+func cleanupOldBackups(dir string, maxAge time.Duration, logger zerolog.Logger) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		logger.Warn().Err(err).Msg("Failed to list directory for backup cleanup")
+		return
+	}
+
+	cutoff := time.Now().Add(-maxAge)
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), backupPrefix) {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		if info.ModTime().Before(cutoff) {
+			path := filepath.Join(dir, entry.Name())
+			if err := secureRemove(path); err == nil {
+				logger.Debug().Str("path", path).Msg("Cleaned up old backup")
+			}
+		}
+	}
+}
+
+func sameChecksum(ctx context.Context, path1, path2 string) (bool, error) {
+	g, gctx := errgroup.WithContext(ctx)
 	var hash1, hash2 string
-	var err1, err2 error
 
-	go func() {
-		defer wg.Done()
-		hash1, err1 = fileChecksum(path1)
-	}()
-	go func() {
-		defer wg.Done()
-		hash2, err2 = fileChecksum(path2)
-	}()
+	g.Go(func() error {
+		var err error
+		hash1, err = fileChecksum(gctx, path1)
+		return err
+	})
 
-	wg.Wait()
-	if err1 != nil {
-		return false, err1
+	g.Go(func() error {
+		var err error
+		hash2, err = fileChecksum(gctx, path2)
+		return err
+	})
+
+	if err := g.Wait(); err != nil {
+		return false, err
 	}
-	if err2 != nil {
-		return false, err2
-	}
+
 	return hash1 == hash2, nil
 }
 
-func fileChecksum(path string) (string, error) {
+func fileChecksum(ctx context.Context, path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("open file: %w", err)
 	}
 	defer f.Close()
 
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
+	hasher := sha256.New()
+	tee := io.TeeReader(f, hasher)
+
+	buf := make([]byte, cfg.BufferSize)
+	for {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		default:
+		}
+
+		_, err := tee.Read(buf)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return "", fmt.Errorf("read file: %w", err)
+		}
 	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+
+	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+func secureRemove(path string) error {
+	err := os.Remove(path)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func secureRemoveAll(path string) error {
+	err := os.RemoveAll(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func fileSize(path string) int64 {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0
+	}
+	return info.Size()
 }
