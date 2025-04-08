@@ -29,15 +29,15 @@ import (
 var ioCopy = io.Copy
 
 func TestMain(m *testing.M) {
-    rand.Seed(1)
-    
-    originalTmpdir := os.Getenv("TMPDIR")
-    
-    code := m.Run()
-    
-    os.Setenv("TMPDIR", originalTmpdir)
-    
-    os.Exit(code)
+	rand.Seed(1)
+
+	originalTmpdir := os.Getenv("TMPDIR")
+
+	code := m.Run()
+
+	os.Setenv("TMPDIR", originalTmpdir)
+
+	os.Exit(code)
 }
 
 func createTestLogger() zerolog.Logger {
@@ -203,7 +203,7 @@ func TestDownloadFile(t *testing.T) {
 				require.Error(t, err)
 				assert.True(t,
 					strings.Contains(strings.ToLower(err.Error()), strings.ToLower(tt.expectError)) ||
-					strings.Contains(strings.ToLower(err.Error()), "refused"),
+						strings.Contains(strings.ToLower(err.Error()), "refused"),
 					"Expected error containing %q, got: %v", tt.expectError, err,
 				)
 			} else {
@@ -215,7 +215,7 @@ func TestDownloadFile(t *testing.T) {
 
 func TestVerifyChecksum(t *testing.T) {
 	t.Parallel()
-	
+
 	tarPath, shaValue := createTestTarGz(t, map[string]string{"test.txt": "content"})
 
 	tests := []struct {
@@ -839,7 +839,7 @@ func TestWriteFile(t *testing.T) {
 
 			if tt.expectError != "" {
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.expectError, 
+				assert.Contains(t, err.Error(), tt.expectError,
 					"Error message should contain %q, got: %v", tt.expectError, err)
 			} else {
 				assert.NoError(t, err)
@@ -852,8 +852,8 @@ func TestWriteFile(t *testing.T) {
 type failingReader struct{}
 
 func (r *failingReader) Read(p []byte) (n int, err error) {
-    return 0, errors.New("simulated read failure") 
-    // ^ Always fails with this error
+	return 0, errors.New("simulated read failure")
+	// ^ Always fails with this error
 }
 
 func TestSignalHandling(t *testing.T) {

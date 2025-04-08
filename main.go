@@ -32,7 +32,6 @@ var (
 	downloadTimeout = 15 * time.Minute
 	bufferSize      = 1 * 1024 * 1024
 	maxRetries      = 3
-	backupFiles     sync.Map
 )
 
 type cleanup struct {
@@ -393,8 +392,6 @@ func atomicSync(ctx context.Context, staging, target string, logger zerolog.Logg
 				break
 			}
 			logger.Debug().Str("path", backupPath).Msg("Created backup file")
-
-			backupFiles.Store(backupPath, true)
 		}
 
 		if err := os.Rename(srcPath, dstPath); err != nil {
@@ -431,10 +428,10 @@ func atomicSync(ctx context.Context, staging, target string, logger zerolog.Logg
 
 	for _, op := range operations {
 		if op.backup != "" {
-			if _, exists := backupFiles.Load(op.backup); !exists {
-				if err := os.Remove(op.backup); err != nil {
-					logger.Warn().Err(err).Str("backup", op.backup).Msg("Failed to clean up backup")
-				}
+			if err := os.Remove(op.backup); err != nil && !os.IsNotExist(err) {
+				logger.Warn().Err(err).Str("backup", op.backup).Msg("Failed to clean up backup")
+			} else {
+				logger.Debug().Str("backup", op.backup).Msg("Cleaned up backup file")
 			}
 		}
 	}
