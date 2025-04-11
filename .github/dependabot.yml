@@ -4,3 +4,16 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    open-pull-requests-limit: 5
+    target-branch: "main"
+    reviewers:
+      - "d4rkfella"
+    assignees:
+      - "d4rkfella"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
