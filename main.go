@@ -48,6 +48,9 @@ var cfg = Config{
 }
 
 var (
+	version    = "dev"
+	commit     = ""
+	date       = ""
 	httpClient = &http.Client{
 		Transport: &http.Transport{
 			MaxIdleConns:      10,
@@ -120,6 +123,12 @@ func main() {
 	}
 
 	logger := createLogger(logLevel)
+
+	logger.Info().
+	    Str("version", version).
+	    Str("commit", commit).
+	    Str("date", date).
+	    Msg("Starting cni-plugins-install")
 
 	rand.Seed(time.Now().UnixNano())
 
