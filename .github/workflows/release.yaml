@@ -34,7 +34,23 @@ jobs:
           go-version: '1.24.2'
 
       - name: Run tests
-        run: go test -v ./...
+        run: |
+          go test -v -coverprofile=coverage.out ./...
+          
+          echo "Test Coverage:"
+          go tool cover -func=coverage.out | grep total:
+          
+          go tool cover -html=coverage.out -o coverage.html
+          
+          COVERAGE=$(go tool cover -func=coverage.out | grep total: | awk '{print $3}')
+          echo "COVERAGE=$COVERAGE" >> $GITHUB_ENV
+          echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
+      
+      - name: Upload coverage report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage-report
+          path: coverage.html
 
       - name: Create annotated tag
         run: |
