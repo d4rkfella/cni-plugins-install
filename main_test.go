@@ -114,12 +114,27 @@ func TestRun_DownloadFailure(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	cfg.BaseURL = ts.URL
+	tmpDir := t.TempDir()
+
+	originalCfg := cfg
+	cfg = Config{
+		BaseURL:         ts.URL,
+		TargetDir:       tmpDir,
+		DownloadTimeout: 5 * time.Second,
+		MaxRetries:      3,
+		BufferSize:      1024,
+	}
+	t.Cleanup(func() { cfg = originalCfg })
+
 	t.Setenv("CNI_PLUGINS_VERSION", "v1.0.0")
 
 	logger := zerolog.New(io.Discard)
 	err := run(context.Background(), logger)
+	
 	assert.ErrorContains(t, err, "download failed")
+	
+	assert.True(t, strings.Contains(err.Error(), "404 Not Found"), 
+		"Expected HTTP 404 error, got: %v", err)
 }
 
 func TestDownloadFile_Retries(t *testing.T) {
@@ -254,18 +269,15 @@ func TestCleanupOldBackups(t *testing.T) {
 	oldBackup := filepath.Join(tmpDir, backupPrefix+"old")
 	newBackup := filepath.Join(tmpDir, backupPrefix+"new")
 
-	// Create test backups
 	require.NoError(t, os.WriteFile(oldBackup, []byte("old"), 0644))
 	require.NoError(t, os.WriteFile(newBackup, []byte("new"), 0644))
 
-	// Set old backup mtime
 	oldTime := time.Now().Add(-2 * backupMaxAge)
 	require.NoError(t, os.Chtimes(oldBackup, oldTime, oldTime))
 
 	logger := zerolog.New(io.Discard)
 	cleanupOldBackups(tmpDir, backupMaxAge, logger)
 
-	// Verify cleanup
 	_, err := os.Stat(oldBackup)
 	assert.True(t, os.IsNotExist(err))
 	_, err = os.Stat(newBackup)
