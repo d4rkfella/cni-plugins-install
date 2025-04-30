@@ -8,12 +8,18 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: write
+  id-token: read
+
 jobs:
   create-release:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Validate semver format
         run: |
@@ -31,6 +37,20 @@ jobs:
       - name: Run tests
         run: go test -v ./...
 
+      - name: Create annotated tag
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git tag -a "${{ github.event.inputs.version }}" -m "Release ${{ github.event.inputs.version }}"
+          git push origin "${{ github.event.inputs.version }}"
+
+      - name: Get previous tag
+        id: previous_tag
+        run: |
+          # Get previous tag sorted by semver
+          PREV_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed -n 2p)
+          echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+
       - name: Create GitHub Release
         uses: actions/create-release@v1
         env:
@@ -40,4 +60,5 @@ jobs:
           release_name: Release ${{ github.event.inputs.version }}
           draft: false
           prerelease: false
-          generate_release_notes: true
+          body: |
+            ${{ steps.previous_tag.outputs.previous_tag && format('Full changes: https://github.com/{0}/compare/{1}...{2}', github.repository, steps.previous_tag.outputs.previous_tag, github.event.inputs.version) || 'Initial release' }}
