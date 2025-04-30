@@ -19,6 +19,8 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+        "go.uber.org/zap/zaptest/observer"
 )
 
 func createTempFile(t *testing.T, cl *cleanup) string {
@@ -299,4 +301,96 @@ func createTestTarball(w io.Writer) {
 	}
 	tw.WriteHeader(hdr)
 	tw.Write(content)
+}
+
+func TestCreateLogger_Zap(t *testing.T) {
+    core, logs := observer.New(zap.InfoLevel)
+    logger := zap.New(core)
+    logger.Debug("secret")
+    logger.Info("hello")
+
+    if logs.Len() != 1 {
+        t.Fatalf("expected 1 log entry, got %d", logs.Len())
+    }
+    entry := logs.All()[0]
+    if entry.Level != zap.InfoLevel || entry.Message != "hello" {
+        t.Errorf("unexpected log entry: %+v", entry)
+    }
+}
+
+func TestCreateBackup_FileNotExists(t *testing.T) {
+    tmpDir := t.TempDir()
+    dst := filepath.Join(tmpDir, "nonexistent.json")
+
+    logger := zerolog.New(io.Discard) // or use buffer for capturing
+
+    path, err := createBackup(dst, logger)
+    if err != nil {
+        t.Fatalf("unexpected error: %v", err)
+    }
+    if path != "" {
+        t.Errorf("expected empty path, got: %s", path)
+    }
+}
+
+func TestCreateBackup_FileExists(t *testing.T) {
+    tmpDir := t.TempDir()
+    dst := filepath.Join(tmpDir, "config.json")
+    os.WriteFile(dst, []byte("dummy"), 0644)
+
+    logger := zerolog.New(io.Discard)
+
+    path, err := createBackup(dst, logger)
+    if err != nil {
+        t.Fatalf("unexpected error: %v", err)
+    }
+
+    if path == "" {
+        t.Error("expected backup path, got empty string")
+    }
+
+    if _, err := os.Stat(path); err != nil {
+        t.Errorf("backup file does not exist: %v", err)
+    }
+}
+
+func TestHandleSyncError_NoBackup(t *testing.T) {
+    err := handleSyncError("somepath.json", "", errors.New("sync failed"), zerolog.New(io.Discard))
+    if err == nil || !strings.Contains(err.Error(), "sync file somepath.json") {
+        t.Errorf("unexpected error: %v", err)
+    }
+}
+
+func TestHandleSyncError_WithBackup(t *testing.T) {
+    tmpDir := t.TempDir()
+    dst := filepath.Join(tmpDir, "dst.json")
+    backup := filepath.Join(tmpDir, "backup.json")
+    os.WriteFile(backup, []byte("backup"), 0644)
+
+    err := handleSyncError(dst, backup, errors.New("sync error"), zerolog.New(io.Discard))
+    if err == nil || !strings.Contains(err.Error(), "sync file") {
+        t.Errorf("unexpected error: %v", err)
+    }
+
+    if _, statErr := os.Stat(dst); statErr != nil {
+        t.Errorf("expected backup restored to dst, but dst missing: %v", statErr)
+    }
+}
+
+func TestPerformRollback(t *testing.T) {
+    tmpDir := t.TempDir()
+
+    orig := filepath.Join(tmpDir, "data.json")
+    backup := filepath.Join(tmpDir, "data.bak")
+    os.WriteFile(backup, []byte("backup"), 0644)
+
+    ops := []struct{ original, backup string }{
+        {original: orig, backup: backup},
+    }
+
+    performRollback(ops, zerolog.New(io.Discard))
+
+    if _, err := os.Stat(orig); err != nil {
+        t.Errorf("expected backup restored to original: %v", err)
+    }
 }
