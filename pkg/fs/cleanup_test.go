@@ -283,4 +283,4 @@ func TestExecute_NilFileSystem(t *testing.T) {
 	err = cleanup.ExecuteWithContext(context.Background(), nil)
 	require.Error(t, err, "ExecuteWithContext should fail with nil FileSystem")
 	assert.Contains(t, err.Error(), "nil filesystem provided")
-} 
+}

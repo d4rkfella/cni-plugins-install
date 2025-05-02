@@ -372,9 +372,9 @@ func TestExtract(t *testing.T) {
 
 		// Depending on how the corruption happens and how tar reader handles it,
 		// the error might be EOF, UnexpectedEOF, or something else during Next().
-		// It seems appending garbage doesn't reliably cause an error here, 
+		// It seems appending garbage doesn't reliably cause an error here,
 		// so we won't assert for one. Instead, we focus on verifying the valid part was extracted.
-		// require.Error(t, err, "Expected error when tar stream is corrupted") 
+		// require.Error(t, err, "Expected error when tar stream is corrupted")
 		if err != nil {
 			// Log if an unexpected error *does* occur
 			t.Logf("Extraction returned an error (unexpected but possible): %v", err)
