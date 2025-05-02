@@ -32,22 +32,28 @@ jobs:
         uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
         with:
           go-version: '1.24.2'
+      
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+      - name: Run golangci-lint
+        run: golangci-lint run ./...
 
       - name: Run tests
         run: |
           go test -v -coverprofile=coverage.out ./...
-          
+
           echo "Test Coverage:"
           go tool cover -func=coverage.out | grep total:
-          
+
           go tool cover -html=coverage.out -o coverage.html
-          
+
           COVERAGE=$(go tool cover -func=coverage.out | grep total: | awk '{print $3}')
           echo "COVERAGE=$COVERAGE" >> $GITHUB_ENV
           echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
-      
+
       - name: Upload coverage report
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: coverage.html
