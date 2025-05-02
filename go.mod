@@ -1,6 +1,6 @@
-module github.com/d4rkfella/cni-plugins-install
+module github.com/darkfella/cni-plugins-install
 
-go 1.24.1
+go 1.24.2
 
 require (
 	github.com/rs/zerolog v1.34.0
