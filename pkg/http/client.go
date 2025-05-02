@@ -2,7 +2,6 @@ package http
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -11,7 +10,6 @@ import (
 	"github.com/darkfella/cni-plugins-install/internal/logging"
 	"github.com/darkfella/cni-plugins-install/pkg/errors"
 	"github.com/darkfella/cni-plugins-install/pkg/retry"
-	"golang.org/x/sync/errgroup"
 )
 
 // Config represents the HTTP client configuration
@@ -94,56 +92,4 @@ func (c *Client) DownloadFile(ctx context.Context, url string, file io.Writer) e
 			Msg("Download completed")
 		return nil
 	})
-}
-
-// DownloadFiles downloads multiple files concurrently
-func (c *Client) DownloadFiles(ctx context.Context, urls []string, files []io.Writer) error {
-	if len(urls) != len(files) {
-		return errors.NewOperationError("download files", fmt.Errorf("mismatched number of URLs and files"))
-	}
-
-	g, gCtx := errgroup.WithContext(ctx)
-	for i := range urls {
-		i := i // Create new variable for goroutine
-		g.Go(func() error {
-			return c.DownloadFile(gCtx, urls[i], files[i])
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		return errors.Wrap(err, "download files")
-	}
-
-	return nil
-}
-
-// GetFileSize gets the size of a file from a URL
-func (c *Client) GetFileSize(ctx context.Context, url string) (size int64, err error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
-	if err != nil {
-		return 0, errors.Wrap(err, "create request")
-	}
-	req.Header.Set("User-Agent", c.config.UserAgent)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return 0, errors.Wrap(err, "http request")
-	}
-	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil && err == nil {
-			err = errors.Wrap(closeErr, "close response body")
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		return 0, &errors.HTTPError{
-			StatusCode: resp.StatusCode,
-			Status:     resp.Status,
-			URL:        url,
-			Method:     http.MethodHead,
-			Message:    "unexpected status code",
-		}
-	}
-
-	return resp.ContentLength, nil
 }

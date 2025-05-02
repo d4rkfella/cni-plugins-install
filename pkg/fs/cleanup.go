@@ -50,26 +50,9 @@ func NewCleanup(logger *logging.Logger) *Cleanup {
 	}
 }
 
-// SetFileSystem sets the file system instance
-func (c *Cleanup) SetFileSystem(fs FileSystem) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.fileSystem = fs
-}
-
-// AddFile adds a file to be cleaned up
-func (c *Cleanup) AddFile(path string) {
-	c.AddItem(path, "file", 0)
-}
-
 // AddDirectory adds a directory to be cleaned up
 func (c *Cleanup) AddDirectory(path string) {
 	c.AddItem(path, "directory", 0)
-}
-
-// AddTempFile adds a temporary file to be cleaned up
-func (c *Cleanup) AddTempFile(path string) {
-	c.AddItem(path, "temp", 1) // Higher priority for temp files
 }
 
 // AddItem adds an item to be cleaned up with specified type and priority
@@ -90,13 +73,6 @@ func (c *Cleanup) AddItem(path, itemType string, priority int) {
 		Str("type", itemType).
 		Int("priority", priority).
 		Msg("Added item to cleanup queue")
-}
-
-// SetTempDir sets the temporary directory to be cleaned up
-func (c *Cleanup) SetTempDir(tempDir string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.tempDir = tempDir
 }
 
 // Execute performs the cleanup
@@ -243,28 +219,6 @@ func (c *Cleanup) cleanupItem(ctx context.Context, item CleanupItem) CleanupResu
 
 	result.Success = true
 	return result
-}
-
-// GetResults returns the cleanup results
-func (c *Cleanup) GetResults() []CleanupResult {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return append([]CleanupResult(nil), c.results...)
-}
-
-// GetStats returns cleanup statistics
-func (c *Cleanup) GetStats() (int, int, time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	successCount := 0
-	for _, result := range c.results {
-		if result.Success {
-			successCount++
-		}
-	}
-
-	return c.cleanupCount, successCount, c.cleanupTime
 }
 
 // sortCleanupItems sorts cleanup items by priority (higher priority first)

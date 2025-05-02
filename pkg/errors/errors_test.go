@@ -45,52 +45,23 @@ func TestNewOperationError(t *testing.T) {
 			}
 		})
 	}
-}
 
-// Tests the FileOperationError type (which embeds OperationError),
-// ensuring file path context is included correctly in the error message.
-func TestNewFileOperationError(t *testing.T) {
-	tests := []struct {
-		name      string
-		operation string
-		file      string
-		cause     error
-		want      string
-	}{
-		{
-			name:      "basic file operation error",
-			operation: "read",
-			file:      "/path/to/file.txt",
-			cause:     fmt.Errorf("file not found"),
-			want:      "read failed for file /path/to/file.txt: file not found",
-		},
-		{
-			name:      "empty file path",
-			operation: "write",
-			file:      "",
-			cause:     fmt.Errorf("permission denied"),
-			want:      "write failed: permission denied",
-		},
-		{
-			name:      "nil cause",
-			operation: "delete",
-			file:      "/tmp/test.txt",
-			cause:     nil,
-			want:      "delete failed for file /tmp/test.txt: <nil>",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := NewFileOperationError(tt.operation, tt.file, tt.cause)
-			if err.Error() != tt.want {
-				t.Errorf("NewFileOperationError() error = %v, want %v", err.Error(), tt.want)
-			}
-			if err.Unwrap() != tt.cause {
-				t.Errorf("NewFileOperationError() unwrapped = %v, want %v", err.Unwrap(), tt.cause)
-			}
-		})
-	}
+	// Add a specific test case for when File is set
+	t.Run("error_with_file", func(t *testing.T) {
+		cause := fmt.Errorf("specific file issue")
+		err := OperationError{
+			Operation: "read",
+			File:      "config.yaml",
+			Cause:     cause,
+		}
+		want := "read failed for file config.yaml: specific file issue"
+		if err.Error() != want {
+			t.Errorf("OperationError with file: Error() = %q, want %q", err.Error(), want)
+		}
+		if err.Unwrap() != cause {
+			t.Errorf("OperationError with file: Unwrap() = %v, want %v", err.Unwrap(), cause)
+		}
+	})
 }
 
 // Tests the Wrap function for correctly adding context to errors.

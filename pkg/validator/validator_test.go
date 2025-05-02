@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/darkfella/cni-plugins-install/internal/logging"
 )
 
@@ -145,6 +147,23 @@ func TestValidateDirectory(t *testing.T) {
 		},
 	}
 
+	// Add a case for non-writable directory
+	readOnlyDir := filepath.Join(tempDir, "readonly-dir")
+	require.NoError(t, os.Mkdir(readOnlyDir, 0555)) // Create read-only directory
+	tests = append(tests, struct {
+		name      string
+		path      string
+		wantError bool
+	}{
+		name:      "non-writable directory",
+		path:      readOnlyDir,
+		wantError: true,
+	})
+	// Ensure permissions are restored for cleanup
+	defer func() {
+		_ = os.Chmod(readOnlyDir, 0755)
+	}()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := v.ValidateDirectory(tt.path)
@@ -175,6 +194,14 @@ func TestValidateFile(t *testing.T) {
 		t.Fatalf("Failed to create readable file: %v", err)
 	}
 
+	// Create an unreadable file for testing
+	unreadableFile := filepath.Join(tempDir, "unreadable.txt")
+	require.NoError(t, os.WriteFile(unreadableFile, []byte("cant read me"), 0200)) // Write-only
+	// Ensure permissions are restored for cleanup
+	defer func() {
+		_ = os.Chmod(unreadableFile, 0600)
+	}()
+
 	tests := []struct {
 		name      string
 		path      string
@@ -195,7 +222,23 @@ func TestValidateFile(t *testing.T) {
 			path:      "/non/existent/file.txt",
 			wantError: true,
 		},
+		{
+			name:      "unreadable file",
+			path:      unreadableFile,
+			wantError: true,
+		},
 	}
+
+	// Add a case for a directory path
+	tests = append(tests, struct {
+		name      string
+		path      string
+		wantError bool
+	}{
+		name:      "directory path",
+		path:      tempDir, // Use the temp directory created in setup
+		wantError: true,    // ValidateFile should fail as it's not a file
+	})
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -315,6 +358,23 @@ func TestValidateWritable(t *testing.T) {
 			wantError: true,
 		},
 	}
+
+	// Add case for read-only directory
+	readOnlyDir := filepath.Join(tempDir, "readonly-dir")
+	require.NoError(t, os.Mkdir(readOnlyDir, 0555)) // Create read-only directory
+	tests = append(tests, struct {
+		name      string
+		path      string
+		wantError bool
+	}{
+		name:      "read-only directory",
+		path:      readOnlyDir,
+		wantError: true,
+	})
+	// Ensure permissions are restored for cleanup
+	defer func() {
+		_ = os.Chmod(readOnlyDir, 0755)
+	}()
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

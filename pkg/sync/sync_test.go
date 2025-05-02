@@ -384,16 +384,6 @@ func TestSyncFiles(t *testing.T) {
 // Tests the wrapper methods (Cleanup, SaveVersion, CheckVersion, VerifyPlugins)
 // to ensure they correctly call the underlying managers (cleanup, versionMgr).
 func TestSyncWrapperMethods(t *testing.T) {
-	logger := logging.NewLogger()
-
-	// Test that s.Cleanup() executes without error when the cleanup list is empty.
-	t.Run("CleanupWrapper", func(t *testing.T) {
-		s := NewSync(logger)
-		err := s.Cleanup() // Calls cleanup.Execute internally using s.fileSystem
-		// Expect no error if cleanup list is empty
-		assert.NoError(t, err)
-	})
-
 	t.Run("VersionWrappers", func(t *testing.T) {
 		s, sourceDir, targetDir := setupSyncTest(t)
 		defer cleanupSyncTest(t, sourceDir, targetDir)
@@ -648,4 +638,61 @@ func TestSyncFiles_BackupMoveError(t *testing.T) {
 	content, err := os.ReadFile(targetPluginPath)
 	require.NoError(t, err)
 	assert.Equal(t, "old content", string(content))
+}
+
+// Tests error handling when moving the source file to target fails,
+// triggering a backup restoration.
+func TestSyncFiles_MoveToTargetFails(t *testing.T) {
+	s, sourceDir, targetDir := setupSyncTest(t)
+	// Ensure target is writable for final cleanup
+	defer cleanupSyncTest(t, sourceDir, targetDir)
+	defer func() { _ = os.Chmod(targetDir, 0755) }() // Ensure cleanup works
+
+	pluginName := "bridge"
+	require.True(t, constants.ManagedPlugins[pluginName])
+	sourcePluginPath := filepath.Join(sourceDir, pluginName)
+	targetPluginPath := filepath.Join(targetDir, pluginName)
+	backupDirName := ""
+
+	// Create source and target files (target will be backed up)
+	sourceContent := "new content"
+	targetContent := "old content"
+	require.NoError(t, os.WriteFile(sourcePluginPath, []byte(sourceContent), 0755))
+	require.NoError(t, os.WriteFile(targetPluginPath, []byte(targetContent), 0644))
+
+	// --- Make the target directory read-only BEFORE sync ---
+	// This will allow backup to succeed, but move source->target to fail
+	require.NoError(t, os.Chmod(targetDir, 0555))
+
+	// --- Perform sync ---
+	err := s.SyncFiles(context.Background(), sourceDir, targetDir)
+	require.Error(t, err, "SyncFiles should fail when move source->target fails")
+	assert.Contains(t, err.Error(), "move file")         // Check error source
+	assert.Contains(t, err.Error(), "permission denied") // Check underlying error
+
+	// --- Verification after failed sync and restore attempt ---
+	// Restore permissions to check files
+	require.NoError(t, os.Chmod(targetDir, 0755))
+
+	// 1. Original target file should be restored from backup
+	require.True(t, s.fileSystem.FileExists(targetPluginPath), "Target file should exist after restore")
+	content, err := os.ReadFile(targetPluginPath)
+	require.NoError(t, err)
+	assert.Equal(t, targetContent, string(content), "Target file should have original content after restore")
+
+	// 2. Source file should still exist (move failed)
+	assert.True(t, s.fileSystem.FileExists(sourcePluginPath), "Source file should still exist as move failed")
+
+	// 3. Backup file should be gone (moved back during restore)
+	// Find the backup dir first (tricky due to timestamp)
+	dirEntries, _ := os.ReadDir(targetDir)
+	for _, entry := range dirEntries {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), constants.BackupPrefix) {
+			backupDirName = filepath.Join(targetDir, entry.Name())
+			break
+		}
+	}
+	require.NotEmpty(t, backupDirName, "Backup directory should have been created")
+	backupFilePath := filepath.Join(backupDirName, pluginName)
+	assert.False(t, s.fileSystem.FileExists(backupFilePath), "Backup file should not exist after restore")
 }

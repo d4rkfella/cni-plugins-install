@@ -15,7 +15,7 @@ const (
 
 	// Default configuration
 	DefaultBaseURL         = "https://github.com/containernetworking/plugins/releases/download"
-	DefaultTargetDir       = "/host/opt/cni/bin"
+	DefaultTargetDir       = "/tmp/host/opt/cni/bin"
 	DefaultDownloadTimeout = 30 * time.Second
 	DefaultMaxRetries      = 3
 	DefaultBufferSize      = 32 * 1024 // 32KB buffer

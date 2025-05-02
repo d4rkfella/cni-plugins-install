@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/stretchr/testify/require"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -223,98 +222,6 @@ func TestCompareFilesSHA256(t *testing.T) {
 	}
 }
 
-func TestVerifyDirectoryChecksums(t *testing.T) {
-	tempDir := t.TempDir()
-	contentA := "content A"
-	fileA := createTempFile(t, tempDir, contentA)
-	// Calculate actual hash for fileA
-	hashA, errA := CalculateFileSHA256(context.Background(), fileA)
-	if errA != nil {
-		t.Fatalf("Failed to calculate hash for file A: %v", errA)
-	}
-
-	contentB := "content B"
-	fileB := createTempFile(t, tempDir, contentB)
-	// Calculate actual hash for fileB
-	hashB, errB := CalculateFileSHA256(context.Background(), fileB)
-	if errB != nil {
-		t.Fatalf("Failed to calculate hash for file B: %v", errB)
-	}
-
-	// Use dynamically calculated hashes
-	expectedCorrect := map[string]string{
-		filepath.Base(fileA): hashA,
-		filepath.Base(fileB): hashB,
-	}
-
-	expectedIncorrectHash := map[string]string{
-		filepath.Base(fileA): hashA,
-		filepath.Base(fileB): "incorrecthash",
-	}
-
-	expectedMissingFile := map[string]string{
-		filepath.Base(fileA): hashA,
-		"missing_file":       "somehash",
-	}
-
-	tests := []struct {
-		name              string
-		dirPath           string
-		expectedChecksums map[string]string
-		wantAllMatch      bool
-		wantErr           bool
-	}{
-		{
-			name:              "all match",
-			dirPath:           tempDir,
-			expectedChecksums: expectedCorrect,
-			wantAllMatch:      true,
-			wantErr:           false,
-		},
-		{
-			name:              "one incorrect hash",
-			dirPath:           tempDir,
-			expectedChecksums: expectedIncorrectHash,
-			wantAllMatch:      false,
-			wantErr:           false,
-		},
-		{
-			name:              "one file missing",
-			dirPath:           tempDir,
-			expectedChecksums: expectedMissingFile,
-			wantAllMatch:      false,
-			wantErr:           true,
-		},
-		{
-			name:              "non-existent directory",
-			dirPath:           "/non/existent/dir/verify",
-			expectedChecksums: expectedCorrect,
-			wantAllMatch:      false,
-			wantErr:           true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Logf("Running test case: %s", tt.name)
-			t.Logf("Directory Path: %s", tt.dirPath)
-			t.Logf("Expected Checksums: %v", tt.expectedChecksums)
-
-			gotAllMatch, err := VerifyDirectoryChecksums(context.Background(), tt.dirPath, tt.expectedChecksums)
-
-			t.Logf("Result - gotAllMatch: %v, err: %v", gotAllMatch, err)
-
-			if (err != nil) != tt.wantErr {
-				t.Errorf("VerifyDirectoryChecksums() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if gotAllMatch != tt.wantAllMatch {
-				t.Errorf("VerifyDirectoryChecksums() = %v, want %v", gotAllMatch, tt.wantAllMatch)
-			}
-		})
-	}
-}
-
 // Test context cancellation
 func TestCalculateFileSHA256_ContextCancel(t *testing.T) {
 	tempDir := t.TempDir()
@@ -330,7 +237,6 @@ func TestCalculateFileSHA256_ContextCancel(t *testing.T) {
 		// For now, we accept it might sometimes pass when it ideally shouldn't.
 		t.Logf("Warning: CalculateFileSHA256 did not return an error with a cancelled context (potentially flaky test)")
 	}
-
 }
 
 func TestVerifyFileSHA256_ContextCancel(t *testing.T) {
@@ -358,20 +264,5 @@ func TestCompareFilesSHA256_ContextCancel(t *testing.T) {
 	_, err := CompareFilesSHA256(ctx, file1, file2)
 	if err == nil {
 		t.Logf("Warning: CompareFilesSHA256 did not return an error with a cancelled context (potentially flaky test)")
-	}
-}
-
-func TestVerifyDirectoryChecksums_ContextCancel(t *testing.T) {
-	tempDir := t.TempDir()
-	fileA := createTempFile(t, tempDir, "content A")
-	hashA := "f9c271af1c585a9b35f45d3837101965a51d8a9b4051f75c9c6653ce1a511c0a"
-	expected := map[string]string{filepath.Base(fileA): hashA}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // Cancel immediately
-
-	_, err := VerifyDirectoryChecksums(ctx, tempDir, expected)
-	if err == nil {
-		t.Logf("Warning: VerifyDirectoryChecksums did not return an error with a cancelled context (potentially flaky test)")
 	}
 }

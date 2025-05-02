@@ -235,11 +235,6 @@ func (s *Sync) sameChecksum(ctx context.Context, path1, path2 string) (bool, err
 	return checksum.CompareFilesSHA256(ctx, path1, path2)
 }
 
-// Cleanup performs cleanup operations
-func (s *Sync) Cleanup() error {
-	return s.cleanup.Execute(s.fileSystem)
-}
-
 // SaveVersion saves the installed version information
 func (s *Sync) SaveVersion(ctx context.Context, targetDir, version string) error {
 	return s.versionMgr.SaveVersion(ctx, targetDir, version)

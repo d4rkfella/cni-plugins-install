@@ -32,15 +32,6 @@ func NewOperationError(operation string, cause error) *OperationError {
 	}
 }
 
-// NewFileOperationError creates a new file operation error
-func NewFileOperationError(operation, file string, cause error) *OperationError {
-	return &OperationError{
-		Operation: operation,
-		File:      file,
-		Cause:     cause,
-	}
-}
-
 // Wrap wraps an error with additional context
 func Wrap(err error, format string, args ...interface{}) error {
 	if err == nil {

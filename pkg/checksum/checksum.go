@@ -7,10 +7,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
-	goerrors "errors"
 	"github.com/darkfella/cni-plugins-install/pkg/errors"
 	"golang.org/x/sync/errgroup"
 )
@@ -86,25 +84,4 @@ func CompareFilesSHA256(ctx context.Context, path1, path2 string) (bool, error) 
 	}
 
 	return hash1 == hash2, nil
-}
-
-// VerifyDirectoryChecksums verifies the checksums of all files in a directory against a map of expected checksums.
-// It returns true if all files match, false otherwise. If an error occurs reading a file or calculating
-// a checksum during verification (other than a mismatch), that error is returned.
-func VerifyDirectoryChecksums(ctx context.Context, dirPath string, expectedChecksums map[string]string) (bool, error) {
-	for file, expectedHash := range expectedChecksums {
-		path := filepath.Join(dirPath, file)
-		if err := VerifyFileSHA256(ctx, path, expectedHash); err != nil {
-			// Check if the error is a simple hash mismatch or a file system error
-			var opErr *errors.OperationError
-			if goerrors.As(err, &opErr) && opErr.Operation == "verify checksum" {
-				// Hash mismatch, return false, no error (as per original logic)
-				return false, nil
-			}
-			// For other errors (e.g., file not found, permission denied), return the error
-			return false, errors.Wrap(err, fmt.Sprintf("failed to verify %s", file))
-		}
-	}
-	// If loop completes without errors, all files matched
-	return true, nil
 }
