@@ -1,2 +1,2 @@
 # cni-plugins-install
-Docker image for installing cni plugins on a kubernetes node
+App written in Go for installing cni plugins on a talos kubernetes node
