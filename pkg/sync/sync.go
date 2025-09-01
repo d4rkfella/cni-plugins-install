@@ -198,16 +198,15 @@ func (s *Sync) SyncFiles(ctx context.Context, sourceDir, targetDir string) error
 
 	s.logger.Info().Int("processed_count", processedCount).Int("managed_plugin_total", len(constants.ManagedPlugins)).Msg("Finished processing managed plugins")
 
-	// Clean up backup directory if empty
-	backupFiles, err := s.fileSystem.ListDirectory(backupDir)
-	if err == nil && len(backupFiles) == 0 {
-		s.logger.Info().Str("backup_dir", backupDir).Msg("Removing empty backup directory")
-		if err := s.fileSystem.RemoveDirectory(backupDir); err != nil {
-			s.logger.Warn().Err(err).Str("backup_dir", backupDir).Msg("Failed to clean up empty backup directory")
-		}
-	} else if err != nil {
-		// Log if we couldn't list the backup dir to check if empty
-		s.logger.Warn().Err(err).Str("backup_dir", backupDir).Msg("Failed to list backup directory for cleanup check")
+	if err := s.fileSystem.RemoveDirectory(backupDir); err != nil {
+	    s.logger.Warn().
+	        Err(err).
+	        Str("backup_dir", backupDir).
+	        Msg("Failed to clean up backup directory")
+	} else {
+	    s.logger.Info().
+	        Str("backup_dir", backupDir).
+	        Msg("Removed backup directory")
 	}
 
 	s.logger.Info().Msg("File synchronization completed successfully")
