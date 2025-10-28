@@ -12,7 +12,6 @@ import (
 	"github.com/darkfella/cni-plugins-install/pkg/retry"
 )
 
-// Config represents the HTTP client configuration
 type Config struct {
 	BaseURL         string
 	DownloadTimeout time.Duration
@@ -21,24 +20,21 @@ type Config struct {
 	UserAgent       string
 }
 
-// DefaultConfig returns the default HTTP client configuration
 func DefaultConfig() *Config {
 	return &Config{
-		DownloadTimeout: 30 * time.Second,
-		MaxRetries:      3,
-		BufferSize:      32 * 1024, // 32KB buffer
+		DownloadTimeout: constants.DefaultDownloadTimeout
+		MaxRetries:      constants.DefaultMaxRetries
+		BufferSize:      constants.DefaultBufferSize
 		UserAgent:       constants.DefaultUserAgent,
 	}
 }
 
-// Client represents an HTTP client with retry capabilities
 type Client struct {
 	logger     *logging.Logger
 	httpClient *http.Client
 	config     *Config
 }
 
-// NewClient creates a new HTTP client
 func NewClient(logger *logging.Logger, httpClient *http.Client, config *Config) *Client {
 	if config == nil {
 		config = DefaultConfig()
@@ -50,7 +46,6 @@ func NewClient(logger *logging.Logger, httpClient *http.Client, config *Config) 
 	}
 }
 
-// DownloadFile downloads a file from a URL to a file with retry capabilities
 func (c *Client) DownloadFile(ctx context.Context, url string, file io.Writer) error {
 	return retry.WithRetry(ctx, &retry.Config{
 		MaxRetries: c.config.MaxRetries,
