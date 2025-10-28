@@ -16,21 +16,18 @@ import (
 	"github.com/darkfella/cni-plugins-install/pkg/fs"
 )
 
-// Info represents the installed version information
 type Info struct {
 	Version     string            `json:"version"`
 	InstalledAt time.Time         `json:"installed_at"`
 	Plugins     map[string]string `json:"plugins"` // plugin name -> checksum
 }
 
-// Manager handles version management operations
 type Manager struct {
 	logger     *logging.Logger
 	fileSystem fs.FileSystem
-	plugins    map[string]bool // list of managed plugins
+	plugins    map[string]bool
 }
 
-// NewManager creates a new version manager
 func NewManager(logger *logging.Logger, plugins map[string]bool) *Manager {
 	return &Manager{
 		logger:     logger,
@@ -39,15 +36,12 @@ func NewManager(logger *logging.Logger, plugins map[string]bool) *Manager {
 	}
 }
 
-// SaveVersion saves the installed version information
 func (m *Manager) SaveVersion(ctx context.Context, targetDir, version string) error {
-	// List only our managed plugins
 	files, err := m.fileSystem.ListDirectory(targetDir)
 	if err != nil {
 		return errors.Wrap(err, "list directory")
 	}
 
-	// Track checksums of our managed plugins
 	plugins := make(map[string]string)
 	for _, file := range files {
 		if !m.plugins[file] {
@@ -85,7 +79,6 @@ func (m *Manager) SaveVersion(ctx context.Context, targetDir, version string) er
 	return nil
 }
 
-// CheckVersion checks if the current version is already installed
 func (m *Manager) CheckVersion(ctx context.Context, targetDir, version string) (bool, error) {
 	versionFile := filepath.Join(targetDir, ".version")
 	if !m.fileSystem.FileExists(versionFile) {
@@ -94,12 +87,8 @@ func (m *Manager) CheckVersion(ctx context.Context, targetDir, version string) (
 
 	data, err := os.ReadFile(versionFile)
 	if err != nil {
-		// If the file exists but we can't read it (e.g., permissions), log a warning
-		// and treat it as a version mismatch/unknown, triggering an install.
-		// If the file truly doesn't exist, os.IsNotExist(err) would be true,
-		// but FileExists already handled that case.
 		m.logger.Warn().Err(err).Str("file", versionFile).Msg("Failed to read existing .version file, proceeding with installation")
-		return false, nil // Treat unreadable as 'needs update'
+		return false, nil
 	}
 
 	var info Info
@@ -107,7 +96,6 @@ func (m *Manager) CheckVersion(ctx context.Context, targetDir, version string) (
 		return false, errors.Wrap(err, "parse version file")
 	}
 
-	// Check version match
 	if info.Version != version {
 		m.logger.Info().Str("current_version", info.Version).Str("requested_version", version).Msg("Version mismatch, will install new version")
 		return false, nil
@@ -116,12 +104,10 @@ func (m *Manager) CheckVersion(ctx context.Context, targetDir, version string) (
 	return true, nil
 }
 
-// VerifyPlugins verifies that all managed plugins are valid and have correct permissions
 func (m *Manager) VerifyPlugins(ctx context.Context, targetDir string) (bool, error) {
 	var installedInfo Info
 	checksumsVerified := false
 
-	// Read existing version info for checksums
 	versionFile := filepath.Join(targetDir, ".version")
 	if m.fileSystem.FileExists(versionFile) {
 		data, err := os.ReadFile(versionFile)
@@ -134,23 +120,19 @@ func (m *Manager) VerifyPlugins(ctx context.Context, targetDir string) (bool, er
 		checksumsVerified = true
 	}
 
-	// Verify each managed plugin
 	for pluginName := range m.plugins {
 		path := filepath.Join(targetDir, pluginName)
 
-		// Check if file exists
 		if !m.fileSystem.FileExists(path) {
 			m.logger.Warn().Str("file", pluginName).Msg("Managed plugin file does not exist")
 			return false, nil
 		}
 
-		// Skip directories (should not happen for plugins, but safety check)
 		if m.fileSystem.IsDirectory(path) {
 			m.logger.Warn().Str("file", pluginName).Msg("Managed plugin path is a directory")
 			continue
 		}
 
-		// Verify checksum if we have version info
 		if checksumsVerified {
 			expectedHash, ok := installedInfo.Plugins[pluginName]
 			if !ok {
@@ -163,10 +145,8 @@ func (m *Manager) VerifyPlugins(ctx context.Context, targetDir string) (bool, er
 			}
 		}
 
-		// Verify if file is executable (without trying to fix it)
 		isExec, err := m.fileSystem.IsExecutable(path)
 		if err != nil {
-			// Propagate errors from underlying file system operations (e.g., stat)
 			return false, errors.Wrap(err, fmt.Sprintf("checking executable status for %s", pluginName))
 		}
 		if !isExec {
