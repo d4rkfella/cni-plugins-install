@@ -10,19 +10,16 @@ import (
 	"github.com/darkfella/cni-plugins-install/pkg/errors"
 )
 
-// Validator represents a validation handler
 type Validator struct {
 	logger *logging.Logger
 }
 
-// NewValidator creates a new validator instance
 func NewValidator(logger *logging.Logger) *Validator {
 	return &Validator{
 		logger: logger,
 	}
 }
 
-// ValidateRoot validates that the process is running as root
 func (v *Validator) ValidateRoot() error {
 	if os.Geteuid() != 0 {
 		return errors.NewOperationError("validate root", fmt.Errorf("must run as root"))
@@ -30,7 +27,6 @@ func (v *Validator) ValidateRoot() error {
 	return nil
 }
 
-// ValidatePlatform validates the platform string
 func (v *Validator) ValidatePlatform(platform string) error {
 	parts := strings.Split(platform, "/")
 	if len(parts) != 2 {
@@ -54,7 +50,6 @@ func (v *Validator) ValidatePlatform(platform string) error {
 	return nil
 }
 
-// ValidatePath validates a file path
 func (v *Validator) ValidatePath(path string) error {
 	if path == "" {
 		return errors.NewOperationError("validate path", fmt.Errorf("path is empty"))
@@ -67,7 +62,6 @@ func (v *Validator) ValidatePath(path string) error {
 	return nil
 }
 
-// ValidateDirectory validates a directory path
 func (v *Validator) ValidateDirectory(path string) error {
 	if err := v.ValidatePath(path); err != nil {
 		return err
@@ -82,7 +76,6 @@ func (v *Validator) ValidateDirectory(path string) error {
 		return errors.NewOperationError("validate directory", fmt.Errorf("not a directory: %s", path))
 	}
 
-	// Check if directory is writable
 	if info.Mode()&0200 == 0 {
 		return errors.NewOperationError("validate directory", fmt.Errorf("directory is not writable: %s", path))
 	}
@@ -90,7 +83,6 @@ func (v *Validator) ValidateDirectory(path string) error {
 	return nil
 }
 
-// ValidateFile validates a file path
 func (v *Validator) ValidateFile(path string) error {
 	if err := v.ValidatePath(path); err != nil {
 		return err
@@ -105,7 +97,6 @@ func (v *Validator) ValidateFile(path string) error {
 		return errors.NewOperationError("validate file", fmt.Errorf("not a file: %s", path))
 	}
 
-	// Check if file is readable
 	if info.Mode()&0400 == 0 {
 		return errors.NewOperationError("validate file", fmt.Errorf("file is not readable: %s", path))
 	}
@@ -113,7 +104,6 @@ func (v *Validator) ValidateFile(path string) error {
 	return nil
 }
 
-// ValidateExecutable validates that a file is executable
 func (v *Validator) ValidateExecutable(path string) error {
 	if err := v.ValidateFile(path); err != nil {
 		return err
@@ -131,7 +121,6 @@ func (v *Validator) ValidateExecutable(path string) error {
 	return nil
 }
 
-// ValidateWritable validates that a path is writable
 func (v *Validator) ValidateWritable(path string) error {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -149,13 +138,11 @@ func (v *Validator) ValidateWritable(path string) error {
 	return nil
 }
 
-// ValidateVersion validates a version string
 func (v *Validator) ValidateVersion(version string) error {
 	if version == "" {
 		return errors.NewOperationError("validate version", fmt.Errorf("version is empty"))
 	}
 
-	// Basic version format validation (vX.Y.Z)
 	if !strings.HasPrefix(version, "v") {
 		return errors.NewOperationError("validate version", fmt.Errorf("version must start with 'v': %s", version))
 	}
@@ -168,7 +155,6 @@ func (v *Validator) ValidateVersion(version string) error {
 	return nil
 }
 
-// ValidateURL validates a URL string
 func (v *Validator) ValidateURL(url string) error {
 	if url == "" {
 		return errors.NewOperationError("validate url", fmt.Errorf("url is empty"))
@@ -181,8 +167,6 @@ func (v *Validator) ValidateURL(url string) error {
 	return nil
 }
 
-// ValidateConfig validates the application configuration
 func (v *Validator) ValidateConfig(config interface{}) error {
-	// TODO: Implement configuration validation using reflection
 	return nil
 }
