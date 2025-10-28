@@ -19,7 +19,7 @@ import (
 type Info struct {
 	Version     string            `json:"version"`
 	InstalledAt time.Time         `json:"installed_at"`
-	Plugins     map[string]string `json:"plugins"` // plugin name -> checksum
+	Plugins     map[string]string `json:"plugins"`
 }
 
 type Manager struct {
