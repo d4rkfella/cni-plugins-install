@@ -7,7 +7,6 @@ import (
 	"github.com/darkfella/cni-plugins-install/internal/constants"
 )
 
-// Config represents the application configuration
 type Config struct {
 	BaseURL         string
 	TargetDir       string
@@ -16,7 +15,6 @@ type Config struct {
 	BufferSize      int
 }
 
-// NewConfig creates a new configuration with defaults
 func NewConfig() *Config {
 	return &Config{
 		BaseURL:         constants.DefaultBaseURL,
@@ -27,14 +25,11 @@ func NewConfig() *Config {
 	}
 }
 
-// LoadFromEnv loads configuration from environment variables
 func (c *Config) LoadFromEnv() {
 	if baseURL := os.Getenv("CNI_PLUGINS_BASE_URL"); baseURL != "" {
 		c.BaseURL = baseURL
 	}
-
 	if targetDir := os.Getenv("CNI_PLUGINS_TARGET_DIR"); targetDir != "" {
 		c.TargetDir = targetDir
 	}
-
 }
