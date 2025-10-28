@@ -3,17 +3,11 @@ package constants
 import "time"
 
 const (
-	// File permissions
 	DirPerm  = 0o755
 	FilePerm = 0o644
-
-	// Backup settings
 	BackupPrefix = ".backup-"
-
-	// HTTP settings
 	DefaultUserAgent = "cni-plugins-installer/1.0"
 
-	// Default configuration
 	DefaultBaseURL         = "https://github.com/containernetworking/plugins/releases/download"
 	DefaultTargetDir       = "/host/opt/cni/bin"
 	DefaultDownloadTimeout = 30 * time.Second
@@ -21,7 +15,6 @@ const (
 	DefaultBufferSize      = 32 * 1024 // 32KB buffer
 )
 
-// ManagedPlugins defines the set of CNI plugin binaries managed by this tool.
 var ManagedPlugins = map[string]bool{
 	"bandwidth":   true,
 	"bridge":      true,
