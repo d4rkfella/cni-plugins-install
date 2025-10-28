@@ -16,13 +16,11 @@ import (
 	"github.com/darkfella/cni-plugins-install/pkg/fs"
 )
 
-// Extractor handles archive extraction operations
 type Extractor struct {
 	logger     *logging.Logger
 	fileSystem fs.FileSystem
 }
 
-// NewExtractor creates a new archive extractor
 func NewExtractor(logger *logging.Logger) *Extractor {
 	return &Extractor{
 		logger:     logger,
@@ -30,7 +28,6 @@ func NewExtractor(logger *logging.Logger) *Extractor {
 	}
 }
 
-// Extract extracts an archive file to the target directory
 func (e *Extractor) Extract(ctx context.Context, archivePath, targetDir string) error {
 	switch {
 	case strings.HasSuffix(archivePath, ".tar.gz") || strings.HasSuffix(archivePath, ".tgz"):
@@ -46,7 +43,6 @@ func (e *Extractor) Extract(ctx context.Context, archivePath, targetDir string) 
 	}
 }
 
-// extractTarGz extracts a tar.gz archive
 func (e *Extractor) extractTarGz(ctx context.Context, src, dst string) (err error) {
 	select {
 	case <-ctx.Done():
@@ -102,7 +98,6 @@ func (e *Extractor) extractTarGz(ctx context.Context, src, dst string) (err erro
 	return nil
 }
 
-// extractZip extracts a zip archive
 func (e *Extractor) extractZip(ctx context.Context, src, dst string) (err error) {
 	reader, err := zip.OpenReader(src)
 	if err != nil {
@@ -130,7 +125,6 @@ func (e *Extractor) extractZip(ctx context.Context, src, dst string) (err error)
 	return nil
 }
 
-// extractZipEntry extracts a single zip entry
 func (e *Extractor) extractZipEntry(file *zip.File, targetPath string) (err error) {
 	if file.FileInfo().IsDir() {
 		if err := e.fileSystem.CreateDirectory(targetPath, file.FileInfo().Mode()); err != nil {
