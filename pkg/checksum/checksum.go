@@ -9,11 +9,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/darkfella/cni-plugins-install/pkg/errors"
 	"golang.org/x/sync/errgroup"
+	"github.com/darkfella/cni-plugins-install/pkg/errors"
 )
 
-// CalculateFileSHA256 calculates the SHA256 checksum of a file
 func CalculateFileSHA256(ctx context.Context, filePath string) (hashStr string, err error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -33,7 +32,6 @@ func CalculateFileSHA256(ctx context.Context, filePath string) (hashStr string, 
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-// VerifyFileSHA256 verifies if a file matches the expected SHA256 checksum
 func VerifyFileSHA256(ctx context.Context, filePath, expectedHash string) error {
 	actualHash, err := CalculateFileSHA256(ctx, filePath)
 	if err != nil {
@@ -47,7 +45,6 @@ func VerifyFileSHA256(ctx context.Context, filePath, expectedHash string) error 
 	return nil
 }
 
-// ReadSHAFile reads a SHA256 checksum from a file
 func ReadSHAFile(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -62,7 +59,6 @@ func ReadSHAFile(path string) (string, error) {
 	return fields[0], nil
 }
 
-// CompareFilesSHA256 compares the SHA256 checksums of two files
 func CompareFilesSHA256(ctx context.Context, path1, path2 string) (bool, error) {
 	g, gctx := errgroup.WithContext(ctx)
 	var hash1, hash2 string
