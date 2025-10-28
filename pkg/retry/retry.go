@@ -11,13 +11,11 @@ import (
 	pkgErrors "github.com/darkfella/cni-plugins-install/pkg/errors"
 )
 
-// Config represents the retry configuration
 type Config struct {
 	MaxRetries int
 	Logger     *logging.Logger
 }
 
-// WithRetry retries an operation with exponential backoff
 func WithRetry(ctx context.Context, cfg *Config, fn func(int) error) error {
 	if ctx == nil {
 		return fmt.Errorf("context cannot be nil")
@@ -43,29 +41,25 @@ func WithRetry(ctx context.Context, cfg *Config, fn func(int) error) error {
 			return nil
 		}
 
-		// Check if the error is retryable
 		var httpErr *pkgErrors.HTTPError
-		retryable := true // Default to retryable for non-HTTP errors (e.g., network)
+		retryable := true
 		if errors.As(err, &httpErr) {
-			// If it's an HTTP error, check the status code
 			retryable = httpErr.IsRetryable()
 		}
 
-		// Check for context errors explicitly as well
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			retryable = false
 		}
 
-		lastErr = err // Store the last error regardless
+		lastErr = err
 
 		if !retryable {
 			cfg.Logger.Warn().
 				Err(err).
 				Msg("Operation failed with non-retryable error")
-			return lastErr // Return the non-retryable error immediately
+			return lastErr
 		}
 
-		// If retryable, log and sleep
 		cfg.Logger.Warn().
 			Err(err).
 			Int("attempt", attempt+1).
@@ -78,7 +72,6 @@ func WithRetry(ctx context.Context, cfg *Config, fn func(int) error) error {
 	return fmt.Errorf("after %d attempts: %w", cfg.MaxRetries, lastErr)
 }
 
-// sleepWithJitter adds jitter to the sleep duration
 func sleepWithJitter(attempt int) {
 	base := time.Second * time.Duration(1<<attempt)
 	jitter := time.Duration(rand.Intn(1000)) * time.Millisecond
