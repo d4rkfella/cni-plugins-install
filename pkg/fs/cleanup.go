@@ -12,22 +12,19 @@ import (
 	"github.com/darkfella/cni-plugins-install/pkg/validator"
 )
 
-// CleanupItem represents a single item to be cleaned up
 type CleanupItem struct {
 	Path      string
-	Type      string // "file", "directory", "temp"
+	Type      string
 	CreatedAt time.Time
-	Priority  int // Higher priority items are cleaned up first
+	Priority  int
 }
 
-// CleanupResult represents the result of a cleanup operation
 type CleanupResult struct {
 	Path    string
 	Success bool
 	Error   error
 }
 
-// Cleanup represents a cleanup handler
 type Cleanup struct {
 	mu           sync.Mutex
 	items        []CleanupItem
@@ -40,7 +37,6 @@ type Cleanup struct {
 	cleanupCount int
 }
 
-// NewCleanup creates a new cleanup handler
 func NewCleanup(logger *logging.Logger) *Cleanup {
 	return &Cleanup{
 		logger:    logger,
@@ -50,12 +46,10 @@ func NewCleanup(logger *logging.Logger) *Cleanup {
 	}
 }
 
-// AddDirectory adds a directory to be cleaned up
 func (c *Cleanup) AddDirectory(path string) {
 	c.AddItem(path, "directory", 0)
 }
 
-// AddItem adds an item to be cleaned up with specified type and priority
 func (c *Cleanup) AddItem(path, itemType string, priority int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -75,12 +69,10 @@ func (c *Cleanup) AddItem(path, itemType string, priority int) {
 		Msg("Added item to cleanup queue")
 }
 
-// Execute performs the cleanup
 func (c *Cleanup) Execute(fs FileSystem) error {
 	return c.ExecuteWithContext(context.Background(), fs)
 }
 
-// ExecuteWithContext performs the cleanup with context support
 func (c *Cleanup) ExecuteWithContext(ctx context.Context, fs FileSystem) error {
 	if fs == nil {
 		return errors.NewOperationError("cleanup", fmt.Errorf("nil filesystem provided"))
@@ -92,7 +84,6 @@ func (c *Cleanup) ExecuteWithContext(ctx context.Context, fs FileSystem) error {
 	}
 	items := append([]CleanupItem(nil), c.items...)
 	tempDir := c.tempDir
-	// Clear previous results
 	c.results = make([]CleanupResult, 0)
 	c.mu.Unlock()
 
@@ -100,7 +91,6 @@ func (c *Cleanup) ExecuteWithContext(ctx context.Context, fs FileSystem) error {
 	successCount := 0
 	errorCount := 0
 
-	// Sort items by priority (higher priority first)
 	sortCleanupItems(items)
 
 	for _, item := range items {
@@ -155,7 +145,6 @@ func (c *Cleanup) ExecuteWithContext(ctx context.Context, fs FileSystem) error {
 		Dur("duration", c.cleanupTime).
 		Msg("Cleanup completed")
 
-	// Return an error only if one or more cleanup operations failed.
 	if errorCount > 0 {
 		return errors.NewOperationError("cleanup", fmt.Errorf("failed to clean up %d items", errorCount))
 	}
@@ -163,13 +152,11 @@ func (c *Cleanup) ExecuteWithContext(ctx context.Context, fs FileSystem) error {
 	return nil
 }
 
-// cleanupItem cleans up a single item
 func (c *Cleanup) cleanupItem(ctx context.Context, item CleanupItem) CleanupResult {
 	result := CleanupResult{
 		Path: item.Path,
 	}
 
-	// Check context cancellation
 	select {
 	case <-ctx.Done():
 		result.Error = ctx.Err()
@@ -177,32 +164,27 @@ func (c *Cleanup) cleanupItem(ctx context.Context, item CleanupItem) CleanupResu
 	default:
 	}
 
-	// Validate path
 	if err := c.validator.ValidatePath(item.Path); err != nil {
 		result.Error = err
 		return result
 	}
 
-	// Check if item exists
 	if !c.fileSystem.FileExists(item.Path) {
 		result.Success = true
 		return result
 	}
 
-	// Check file permissions
 	info, err := os.Stat(item.Path)
 	if err != nil {
 		result.Error = errors.Wrap(err, "failed to get file info")
 		return result
 	}
 
-	// Check if file is writable
 	if info.Mode().Perm()&0200 == 0 {
 		result.Error = errors.NewOperationError("cleanup", fmt.Errorf("file is not writable: %s", item.Path))
 		return result
 	}
 
-	// Perform cleanup based on item type
 	switch item.Type {
 	case "directory":
 		err = c.fileSystem.RemoveDirectory(item.Path)
@@ -221,7 +203,6 @@ func (c *Cleanup) cleanupItem(ctx context.Context, item CleanupItem) CleanupResu
 	return result
 }
 
-// sortCleanupItems sorts cleanup items by priority (higher priority first)
 func sortCleanupItems(items []CleanupItem) {
 	for i := 0; i < len(items)-1; i++ {
 		for j := i + 1; j < len(items); j++ {
