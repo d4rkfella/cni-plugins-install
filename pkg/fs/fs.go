@@ -11,7 +11,6 @@ import (
 	"github.com/darkfella/cni-plugins-install/pkg/validator"
 )
 
-// FileSystem defines the interface for filesystem operations
 type FileSystem interface {
 	ListDirectory(path string) ([]string, error)
 	IsDirectory(path string) bool
@@ -29,13 +28,11 @@ type FileSystem interface {
 	VerifyFile(path string) error
 }
 
-// fileSystem implements the FileSystem interface using standard os calls
 type fileSystem struct {
 	logger    *logging.Logger
 	validator *validator.Validator
 }
 
-// NewFileSystem creates a new FileSystem instance
 func NewFileSystem(logger *logging.Logger) FileSystem {
 	return &fileSystem{
 		logger:    logger,
@@ -43,7 +40,6 @@ func NewFileSystem(logger *logging.Logger) FileSystem {
 	}
 }
 
-// CreateDirectory creates a directory and its parents if they don't exist
 func (fs *fileSystem) CreateDirectory(path string, perm os.FileMode) error {
 	if err := fs.validator.ValidatePath(path); err != nil {
 		return err
@@ -51,7 +47,6 @@ func (fs *fileSystem) CreateDirectory(path string, perm os.FileMode) error {
 	return os.MkdirAll(path, perm)
 }
 
-// RemoveDirectory removes a directory and its contents
 func (fs *fileSystem) RemoveDirectory(path string) error {
 	if err := fs.validator.ValidatePath(path); err != nil {
 		return err
@@ -59,7 +54,6 @@ func (fs *fileSystem) RemoveDirectory(path string) error {
 	return os.RemoveAll(path)
 }
 
-// ListDirectory lists the contents of a directory
 func (fs *fileSystem) ListDirectory(path string) (names []string, err error) {
 	if err := fs.validator.ValidateDirectory(path); err != nil {
 		return nil, err
@@ -83,13 +77,11 @@ func (fs *fileSystem) ListDirectory(path string) (names []string, err error) {
 	return names, nil
 }
 
-// FileExists checks if a file exists
 func (fs *fileSystem) FileExists(path string) bool {
 	_, err := os.Lstat(path)
 	return !os.IsNotExist(err)
 }
 
-// IsDirectory checks if a path is a directory
 func (fs *fileSystem) IsDirectory(path string) bool {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -98,7 +90,6 @@ func (fs *fileSystem) IsDirectory(path string) bool {
 	return info.IsDir()
 }
 
-// GetFileSize returns the size of a file
 func (fs *fileSystem) GetFileSize(path string) (int64, error) {
 	if err := fs.validator.ValidateFile(path); err != nil {
 		return 0, err
@@ -112,7 +103,6 @@ func (fs *fileSystem) GetFileSize(path string) (int64, error) {
 	return info.Size(), nil
 }
 
-// GetFileMode returns the mode of a file
 func (fs *fileSystem) GetFileMode(path string) (os.FileMode, error) {
 	if err := fs.validator.ValidatePath(path); err != nil {
 		return 0, err
@@ -126,7 +116,6 @@ func (fs *fileSystem) GetFileMode(path string) (os.FileMode, error) {
 	return info.Mode(), nil
 }
 
-// SetFileMode sets the mode of a file
 func (fs *fileSystem) SetFileMode(path string, mode os.FileMode) error {
 	if err := fs.validator.ValidatePath(path); err != nil {
 		return err
@@ -134,7 +123,6 @@ func (fs *fileSystem) SetFileMode(path string, mode os.FileMode) error {
 	return os.Chmod(path, mode)
 }
 
-// MoveFile moves a file from source to destination
 func (fs *fileSystem) MoveFile(src, dst string) error {
 	if err := fs.validator.ValidatePath(src); err != nil {
 		return err
@@ -145,12 +133,10 @@ func (fs *fileSystem) MoveFile(src, dst string) error {
 	return os.Rename(src, dst)
 }
 
-// WriteFileAtomic writes data to a file atomically using a temporary file
 func (fs *fileSystem) WriteFileAtomic(path string, data io.Reader, perm os.FileMode) error {
 	if err := fs.validator.ValidatePath(path); err != nil {
 		return err
 	}
-	// Add nil reader check
 	if data == nil {
 		return errors.NewOperationError("write file atomic", fmt.Errorf("input reader cannot be nil"))
 	}
@@ -161,7 +147,6 @@ func (fs *fileSystem) WriteFileAtomic(path string, data io.Reader, perm os.FileM
 	if err != nil {
 		return errors.Wrap(err, "create temporary file")
 	}
-	// Ensure temp file is closed and removed even if errors occur later
 	defer func() {
 		if closeErr := tempFile.Close(); closeErr != nil {
 			fs.logger.Warn().Err(closeErr).Str("file", tempFile.Name()).Msg("Error closing temp file during cleanup")
@@ -183,7 +168,6 @@ func (fs *fileSystem) WriteFileAtomic(path string, data io.Reader, perm os.FileM
 		return errors.Wrap(err, "sync temporary file")
 	}
 
-	// Atomically rename temp file to target path
 	if err := os.Rename(tempFile.Name(), path); err != nil {
 		return errors.Wrap(err, "rename temporary file")
 	}
@@ -191,23 +175,20 @@ func (fs *fileSystem) WriteFileAtomic(path string, data io.Reader, perm os.FileM
 	return nil
 }
 
-// SecureRemove removes a file securely by first making it writable if necessary
 func (fs *fileSystem) SecureRemove(path string) error {
 	if path == "" {
 		return fmt.Errorf("remove file: path is empty")
 	}
 
-	// Check if file exists
 	info, err := os.Lstat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			fs.logger.Debug().Str("path", path).Msg("File does not exist, skipping removal")
-			return nil // File doesn't exist, nothing to remove
+			return nil
 		}
 		return errors.Wrap(err, "stat file")
 	}
 
-	// If file is not writable, make it writable first
 	if info.Mode()&0200 == 0 {
 		fs.logger.Warn().Str("path", path).Msg("File is not writable, attempting to make it writable")
 		if err := os.Chmod(path, info.Mode()|0200); err != nil {
@@ -218,17 +199,14 @@ func (fs *fileSystem) SecureRemove(path string) error {
 	return os.Remove(path)
 }
 
-// VerifyDirectory verifies that a path exists and is a directory
 func (fs *fileSystem) VerifyDirectory(path string) error {
 	return fs.validator.ValidateDirectory(path)
 }
 
-// VerifyFile verifies that a path exists and is a file
 func (fs *fileSystem) VerifyFile(path string) error {
 	return fs.validator.ValidateFile(path)
 }
 
-// IsExecutable checks if a file is executable
 func (fs *fileSystem) IsExecutable(path string) (bool, error) {
 	if err := fs.validator.ValidateFile(path); err != nil {
 		return false, err
